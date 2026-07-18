@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Remote</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="auth-screen">
+    <div class="auth-card">
+      <h1>Claude Remote</h1>
+      <p>Enter your access token</p>
+      <input type="password" id="token-input" placeholder="Token" autofocus>
+      <button id="auth-btn">Connect</button>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h2>Sessions</h2>
+        <button id="new-session-btn" title="New session">+</button>
+      </div>
+      <div id="session-list"></div>
+      <div class="sidebar-footer">
+        <button id="logout-btn">Logout</button>
+      </div>
+    </aside>
+
+    <main id="main">
+      <div id="no-session">
+        <p>Select a session or create a new one</p>
+      </div>
+      <div id="terminal-container" class="hidden"></div>
+      <div id="session-bar" class="hidden">
+        <span id="session-info"></span>
+        <button id="kill-session-btn" title="Kill session">Kill</button>
+      </div>
+    </main>
+  </div>
+
+  <div id="new-session-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>New Session</h3>
+      <label>Working directory</label>
+      <input type="text" id="cwd-input" placeholder="~/Projects/my-app">
+      <div class="modal-actions">
+        <button id="cancel-modal">Cancel</button>
+        <button id="create-session-btn">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
