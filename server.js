@@ -4,7 +4,6 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
-const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,15 +12,9 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
-// agents: Map<accessKey, Agent>
-// Agent: { id, name, hostname, platform, accessKey, ws, sessions, connectedAt }
 const agents = new Map();
-
-// sessions: Map<sessionId, Session>
-// Session: { id, agentKey, cwd, createdAt, alive, history, subscribers }
 const sessions = new Map();
 
-// rate limiting per IP
 const loginAttempts = new Map();
 const LOGIN_WINDOW = 60000;
 const MAX_ATTEMPTS = 10;
@@ -104,12 +97,7 @@ app.get('/api/sessions', authMiddleware, (req, res) => {
   const list = [];
   for (const [id, s] of sessions) {
     if (s.agentKey === req.agent.accessKey) {
-      list.push({
-        id,
-        cwd: s.cwd,
-        createdAt: s.createdAt,
-        alive: s.alive,
-      });
+      list.push({ id, cwd: s.cwd, createdAt: s.createdAt, alive: s.alive });
     }
   }
   res.json(list);
@@ -121,7 +109,7 @@ app.post('/api/sessions', authMiddleware, (req, res) => {
     return res.status(503).json({ error: 'Agent is offline' });
   }
 
-  const { cwd, cols = 120, rows = 40 } = req.body;
+  const { cwd, cols = 80, rows = 24, resumeId } = req.body;
   const id = uuidv4();
 
   const session = {
@@ -142,6 +130,7 @@ app.post('/api/sessions', authMiddleware, (req, res) => {
     cwd: session.cwd,
     cols,
     rows,
+    resumeId: resumeId || null,
   }));
 
   res.json({ id, cwd: session.cwd, createdAt: session.createdAt });
@@ -163,7 +152,44 @@ app.delete('/api/sessions/:id', authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-// Admin endpoint: list all connected agents
+// ── Conversation history (proxied to agent) ──
+
+const pendingRequests = new Map();
+let reqCounter = 0;
+
+function agentRequest(agent, action, params, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    if (!agent.ws || agent.ws.readyState !== 1) {
+      return reject(new Error('Agent offline'));
+    }
+    const reqId = String(++reqCounter);
+    const timer = setTimeout(() => {
+      pendingRequests.delete(reqId);
+      reject(new Error('Timeout'));
+    }, timeout);
+    pendingRequests.set(reqId, { resolve, reject, timer });
+    agent.ws.send(JSON.stringify({ type: 'request', reqId, action, params }));
+  });
+}
+
+app.get('/api/conversations', authMiddleware, async (req, res) => {
+  try {
+    const data = await agentRequest(req.agent, 'list-conversations', {});
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.get('/api/conversations/:file(*)', authMiddleware, async (req, res) => {
+  try {
+    const data = await agentRequest(req.agent, 'get-conversation', { file: req.params.file });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 app.get('/api/admin/agents', (req, res) => {
   const key = req.headers['authorization']?.replace('Bearer ', '');
   if (!ADMIN_KEY || key !== ADMIN_KEY) {
@@ -238,6 +264,18 @@ function handleAgentConnection(ws, url) {
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
+
+      if (msg.type === 'response') {
+        const pending = pendingRequests.get(msg.reqId);
+        if (pending) {
+          pendingRequests.delete(msg.reqId);
+          clearTimeout(pending.timer);
+          if (msg.error) pending.reject(new Error(msg.error));
+          else pending.resolve(msg.data);
+        }
+        return;
+      }
+
       if (!msg.sessionId) return;
 
       const session = sessions.get(msg.sessionId);
