@@ -4,40 +4,59 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Remote</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="auth-screen">
     <div class="auth-card">
+      <div class="auth-logo">⚡</div>
       <h1>Claude Remote</h1>
-      <p>Enter your access token</p>
-      <input type="password" id="token-input" placeholder="Token" autofocus>
+      <p>Enter the access key from your agent</p>
+      <input type="password" id="token-input" placeholder="Access key" autofocus>
       <button id="auth-btn">Connect</button>
+      <div id="auth-error" class="auth-error hidden"></div>
     </div>
   </div>
 
   <div id="app" class="hidden">
     <aside id="sidebar">
       <div class="sidebar-header">
-        <h2>Sessions</h2>
+        <h2>⚡ Claude Remote</h2>
+      </div>
+      <div id="agent-card" class="agent-card">
+        <div class="agent-card-status">
+          <span id="agent-dot" class="dot online"></span>
+          <span id="agent-name">Agent</span>
+        </div>
+        <div id="agent-meta" class="agent-meta"></div>
+      </div>
+      <div class="section-header">
+        <span>Sessions</span>
         <button id="new-session-btn" title="New session">+</button>
       </div>
-      <div id="agent-status" class="agent-status offline">Agent offline</div>
       <div id="session-list"></div>
       <div class="sidebar-footer">
-        <button id="logout-btn">Logout</button>
+        <button id="logout-btn">Disconnect</button>
       </div>
     </aside>
 
     <main id="main">
       <div id="no-session">
-        <p>Select a session or create a new one</p>
+        <div class="empty-state">
+          <div class="empty-icon">⚡</div>
+          <h3>No active session</h3>
+          <p>Create a new Claude Code session to get started</p>
+          <button id="empty-new-btn">New Session</button>
+        </div>
       </div>
       <div id="terminal-container" class="hidden"></div>
       <div id="session-bar" class="hidden">
         <span id="session-info"></span>
-        <button id="kill-session-btn" title="Kill session">Kill</button>
+        <div class="session-bar-actions">
+          <button id="kill-session-btn" class="btn-danger" title="Kill session">Kill</button>
+        </div>
       </div>
     </main>
   </div>
@@ -45,10 +64,11 @@
   <div id="new-session-modal" class="modal hidden">
     <div class="modal-content">
       <h3>New Session</h3>
-      <label>Working directory</label>
-      <input type="text" id="cwd-input" placeholder="~/Projects/my-app">
+      <label for="cwd-input">Working directory</label>
+      <input type="text" id="cwd-input" placeholder="~/Projects/my-project">
+      <p class="hint">Path on the agent machine. Leave empty for home directory.</p>
       <div class="modal-actions">
-        <button id="cancel-modal">Cancel</button>
+        <button id="cancel-modal" class="btn-secondary">Cancel</button>
         <button id="create-session-btn">Create</button>
       </div>
     </div>

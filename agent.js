@@ -1,70 +1,101 @@
 require('dotenv').config();
 const crypto = require('crypto');
+const os = require('os');
 const WebSocket = require('ws');
 const { spawn } = require('child_process');
 const path = require('path');
 
 const SERVER_URL = process.env.SERVER_URL || 'wss://claude.pishchykau.eu';
-const AGENT_TOKEN = process.env.AGENT_TOKEN || crypto.randomBytes(24).toString('base64url');
+const AGENT_NAME = process.env.AGENT_NAME || os.userInfo().username + "'s machine";
+const AGENT_KEY = process.env.AGENT_KEY || crypto.randomBytes(24).toString('base64url');
 const PTY_BRIDGE = path.join(__dirname, 'pty-bridge.py');
 
 const sessions = new Map();
 let ws = null;
 let reconnectTimer = null;
+let reconnectDelay = 1000;
 
 console.log('');
-console.log('  Claude Remote Agent');
-console.log('  ───────────────────────────────────');
-console.log(`  Server:     ${SERVER_URL}`);
-console.log(`  Access key: ${AGENT_TOKEN}`);
-console.log('  ───────────────────────────────────');
-console.log('  Use this key to log in at the web UI');
+console.log('  ╔══════════════════════════════════════╗');
+console.log('  ║         Claude Remote Agent           ║');
+console.log('  ╠══════════════════════════════════════╣');
+console.log(`  ║  Name:  ${pad(AGENT_NAME, 28)}║`);
+console.log(`  ║  Host:  ${pad(os.hostname(), 28)}║`);
+console.log(`  ║  Key:   ${pad(AGENT_KEY, 28)}║`);
+console.log('  ╠══════════════════════════════════════╣');
+console.log(`  ║  Server: ${pad(SERVER_URL, 27)}║`);
+console.log('  ╚══════════════════════════════════════╝');
 console.log('');
+console.log('  Use the key above to connect at the web UI.');
+console.log('');
+
+function pad(str, len) {
+  if (str.length > len) return str.substring(0, len - 1) + '…';
+  return str + ' '.repeat(len - str.length);
+}
 
 function connect() {
-  const url = `${SERVER_URL}?role=agent&token=${encodeURIComponent(AGENT_TOKEN)}`;
-  ws = new WebSocket(url);
+  const params = new URLSearchParams({
+    role: 'agent',
+    key: AGENT_KEY,
+    name: AGENT_NAME,
+    hostname: os.hostname(),
+    platform: `${os.platform()}/${os.arch()}`,
+  });
+
+  ws = new WebSocket(`${SERVER_URL}?${params}`);
 
   ws.on('open', () => {
-    console.log('[agent] Connected to server');
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
+    console.log(`[${ts()}] Connected to server`);
+    reconnectDelay = 1000;
   });
 
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
 
-      if (msg.type === 'create-session') {
-        createSession(msg.id, msg.cwd, msg.cols, msg.rows);
-      } else if (msg.type === 'kill-session') {
-        killSession(msg.id);
-      } else if (msg.type === 'input') {
-        const session = sessions.get(msg.sessionId);
-        if (session && session.proc.stdin.writable) {
-          session.proc.stdin.write(msg.data);
+      switch (msg.type) {
+        case 'registered':
+          console.log(`[${ts()}] Registered as agent ${msg.id}`);
+          break;
+        case 'create-session':
+          createSession(msg.id, msg.cwd, msg.cols, msg.rows);
+          break;
+        case 'kill-session':
+          killSession(msg.id);
+          break;
+        case 'input': {
+          const s = sessions.get(msg.sessionId);
+          if (s && s.proc.stdin.writable) s.proc.stdin.write(msg.data);
+          break;
         }
-      } else if (msg.type === 'resize') {
-        const session = sessions.get(msg.sessionId);
-        if (session && session.proc.stdin.writable) {
-          session.proc.stdin.write(`\x1b_RESIZE:${msg.cols},${msg.rows}\x1b\\`);
+        case 'resize': {
+          const s = sessions.get(msg.sessionId);
+          if (s && s.proc.stdin.writable) {
+            s.proc.stdin.write(`\x1b_RESIZE:${msg.cols},${msg.rows}\x1b\\`);
+          }
+          break;
         }
       }
     } catch (err) {
-      console.error('[agent] message error:', err.message);
+      console.error(`[${ts()}] Message error:`, err.message);
     }
   });
 
   ws.on('close', (code) => {
-    console.log(`[agent] Disconnected (${code}). Reconnecting in 3s...`);
     ws = null;
-    reconnectTimer = setTimeout(connect, 3000);
+    if (code === 4009) {
+      console.log(`[${ts()}] Replaced by another agent with the same key`);
+    }
+    console.log(`[${ts()}] Disconnected. Reconnecting in ${reconnectDelay / 1000}s...`);
+    reconnectTimer = setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
   });
 
   ws.on('error', (err) => {
-    console.error('[agent] WebSocket error:', err.message);
+    if (err.code !== 'ECONNREFUSED') {
+      console.error(`[${ts()}] Error:`, err.message);
+    }
   });
 }
 
@@ -87,29 +118,27 @@ function createSession(id, cwd, cols, rows) {
       env,
     });
   } catch (err) {
-    console.error(`[session ${id}] spawn error:`, err.message);
-    sendToServer({ type: 'exit', sessionId: id, exitCode: -1 });
+    console.error(`[${ts()}] Session ${id} spawn error:`, err.message);
+    send({ type: 'exit', sessionId: id, exitCode: -1 });
     return;
   }
 
-  const session = { id, proc };
-  sessions.set(id, session);
+  sessions.set(id, { id, proc, cwd: workDir });
+  console.log(`[${ts()}] Session ${id.slice(0, 8)} started in ${workDir}`);
 
   proc.stdout.on('data', (data) => {
-    sendToServer({ type: 'output', sessionId: id, data: data.toString('utf-8') });
+    send({ type: 'output', sessionId: id, data: data.toString('utf-8') });
   });
 
   proc.stderr.on('data', (data) => {
-    sendToServer({ type: 'output', sessionId: id, data: data.toString('utf-8') });
+    send({ type: 'output', sessionId: id, data: data.toString('utf-8') });
   });
 
   proc.on('exit', (exitCode) => {
-    console.log(`[session ${id}] exited (${exitCode})`);
+    console.log(`[${ts()}] Session ${id.slice(0, 8)} exited (${exitCode})`);
     sessions.delete(id);
-    sendToServer({ type: 'exit', sessionId: id, exitCode });
+    send({ type: 'exit', sessionId: id, exitCode });
   });
-
-  console.log(`[session ${id}] started in ${workDir}`);
 }
 
 function killSession(id) {
@@ -117,20 +146,30 @@ function killSession(id) {
   if (session) {
     session.proc.kill('SIGTERM');
     sessions.delete(id);
+    console.log(`[${ts()}] Session ${id.slice(0, 8)} killed`);
   }
 }
 
-function sendToServer(msg) {
+function send(msg) {
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify(msg));
   }
 }
 
+function ts() {
+  return new Date().toLocaleTimeString();
+}
+
 process.on('SIGINT', () => {
-  console.log('\n[agent] Shutting down...');
-  for (const [, session] of sessions) {
-    session.proc.kill('SIGTERM');
-  }
+  console.log(`\n[${ts()}] Shutting down...`);
+  for (const [, session] of sessions) session.proc.kill('SIGTERM');
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (ws) ws.close();
+  process.exit();
+});
+
+process.on('SIGTERM', () => {
+  for (const [, session] of sessions) session.proc.kill('SIGTERM');
   if (ws) ws.close();
   process.exit();
 });
