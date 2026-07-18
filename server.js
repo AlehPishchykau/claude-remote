@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
@@ -11,17 +10,17 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3000;
-const AUTH_TOKEN = process.env.AUTH_TOKEN;
-const PTY_BRIDGE = path.join(__dirname, 'pty-bridge.py');
 
 const sessions = new Map();
+let agentWs = null;
+let activeToken = null;
 
 app.use(express.json());
 
 function authMiddleware(req, res, next) {
   const token = req.headers['authorization']?.replace('Bearer ', '') ||
     req.query.token;
-  if (token !== AUTH_TOKEN) {
+  if (!activeToken || token !== activeToken) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
@@ -29,6 +28,10 @@ function authMiddleware(req, res, next) {
 
 app.use('/api', authMiddleware);
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/status', (req, res) => {
+  res.json({ agentOnline: agentWs !== null && agentWs.readyState === 1 });
+});
 
 app.get('/api/sessions', (req, res) => {
   const list = [];
@@ -44,102 +47,117 @@ app.get('/api/sessions', (req, res) => {
 });
 
 app.post('/api/sessions', (req, res) => {
+  if (!agentWs || agentWs.readyState !== 1) {
+    return res.status(503).json({ error: 'Agent is offline' });
+  }
+
   const { cwd, cols = 120, rows = 40 } = req.body;
   const id = uuidv4();
-  let workDir = cwd || process.env.HOME;
-  if (workDir.startsWith('~')) {
-    workDir = workDir.replace(/^~/, process.env.HOME);
-  }
-
-  const env = { ...process.env, TERM: 'xterm-256color', PTY_CWD: workDir };
-  const localBin = path.join(process.env.HOME, '.local', 'bin');
-  if (!env.PATH?.includes(localBin)) {
-    env.PATH = localBin + ':' + (env.PATH || '');
-  }
-
-  let proc;
-  try {
-    proc = spawn('python3', [PTY_BRIDGE, String(cols), String(rows), 'claude'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-
-  if (!proc.pid) {
-    return res.status(500).json({ error: 'Failed to start process' });
-  }
 
   const session = {
     id,
-    cwd: workDir,
+    cwd: cwd || '~',
     createdAt: new Date().toISOString(),
     alive: true,
-    proc,
     history: [],
     subscribers: new Set(),
   };
 
-  proc.stdout.on('data', (data) => {
-    const str = data.toString('utf-8');
-    session.history.push(str);
-    if (session.history.length > 10000) {
-      session.history = session.history.slice(-5000);
-    }
-    for (const ws of session.subscribers) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'output', data: str }));
-      }
-    }
-  });
-
-  proc.stderr.on('data', (data) => {
-    const str = data.toString('utf-8');
-    for (const ws of session.subscribers) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'output', data: str }));
-      }
-    }
-  });
-
-  proc.on('exit', (exitCode) => {
-    session.alive = false;
-    for (const ws of session.subscribers) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'exit', exitCode }));
-      }
-    }
-  });
-
   sessions.set(id, session);
-  res.json({ id, cwd: workDir, createdAt: session.createdAt });
-});
 
-app.post('/api/sessions/:id/resize', (req, res) => {
-  const session = sessions.get(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  const { cols, rows } = req.body;
-  if (session.alive && session.proc.stdin.writable) {
-    session.proc.stdin.write(`\x1b_RESIZE:${cols},${rows}\x1b\\`);
-  }
-  res.json({ ok: true });
+  agentWs.send(JSON.stringify({
+    type: 'create-session',
+    id,
+    cwd: session.cwd,
+    cols,
+    rows,
+  }));
+
+  res.json({ id, cwd: session.cwd, createdAt: session.createdAt });
 });
 
 app.delete('/api/sessions/:id', (req, res) => {
   const session = sessions.get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  session.proc.kill('SIGTERM');
+
+  if (agentWs && agentWs.readyState === 1) {
+    agentWs.send(JSON.stringify({ type: 'kill-session', id: req.params.id }));
+  }
+
+  session.alive = false;
   sessions.delete(req.params.id);
   res.json({ ok: true });
 });
 
+function broadcastToSession(sessionId, msg) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  const payload = JSON.stringify(msg);
+  for (const ws of session.subscribers) {
+    if (ws.readyState === 1) ws.send(payload);
+  }
+}
+
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  const role = url.searchParams.get('role');
+
+  if (role === 'agent') {
+    const token = url.searchParams.get('token');
+    if (!token || token.length < 8) {
+      ws.close(4001, 'Invalid token');
+      return;
+    }
+
+    if (agentWs && agentWs.readyState === 1) {
+      agentWs.close(4009, 'Replaced by new agent');
+    }
+    agentWs = ws;
+    activeToken = token;
+    sessions.clear();
+    console.log('[agent] connected, access key set');
+
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw);
+        const session = sessions.get(msg.sessionId);
+        if (!session) return;
+
+        if (msg.type === 'output') {
+          session.history.push(msg.data);
+          if (session.history.length > 10000) {
+            session.history = session.history.slice(-5000);
+          }
+          broadcastToSession(msg.sessionId, { type: 'output', data: msg.data });
+        } else if (msg.type === 'exit') {
+          session.alive = false;
+          broadcastToSession(msg.sessionId, { type: 'exit', exitCode: msg.exitCode });
+        }
+      } catch {}
+    });
+
+    ws.on('close', () => {
+      console.log('[agent] disconnected');
+      if (agentWs === ws) {
+        agentWs = null;
+        activeToken = null;
+      }
+      for (const [, session] of sessions) {
+        if (session.alive) {
+          session.alive = false;
+          broadcastToSession(session.id, { type: 'exit', exitCode: -1 });
+        }
+      }
+    });
+
+    return;
+  }
+
+  // Browser client
   const token = url.searchParams.get('token');
   const sessionId = url.searchParams.get('session');
 
-  if (token !== AUTH_TOKEN) {
+  if (!activeToken || token !== activeToken) {
     ws.close(4001, 'Unauthorized');
     return;
   }
@@ -157,13 +175,16 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ type: 'history', data: recentHistory }));
   }
 
-  ws.on('message', (msg) => {
+  ws.on('message', (raw) => {
     try {
-      const parsed = JSON.parse(msg);
-      if (parsed.type === 'input' && session.alive) {
-        session.proc.stdin.write(parsed.data);
-      } else if (parsed.type === 'resize' && session.alive) {
-        session.proc.stdin.write(`\x1b_RESIZE:${parsed.cols},${parsed.rows}\x1b\\`);
+      const msg = JSON.parse(raw);
+      if (!session.alive) return;
+
+      if (agentWs && agentWs.readyState === 1) {
+        agentWs.send(JSON.stringify({
+          ...msg,
+          sessionId,
+        }));
       }
     } catch {}
   });
@@ -174,58 +195,5 @@ wss.on('connection', (ws, req) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Claude Remote running on http://localhost:${PORT}`);
-
-  if (process.argv.includes('--tunnel')) {
-    startTunnel();
-  }
+  console.log(`Claude Remote server on http://localhost:${PORT}`);
 });
-
-function startTunnel() {
-  const tunnelName = process.env.TUNNEL_NAME;
-  const tunnelConfig = process.env.TUNNEL_CONFIG;
-  let tunnelArgs;
-
-  if (tunnelName) {
-    tunnelArgs = ['tunnel'];
-    if (tunnelConfig) tunnelArgs.push('--config', tunnelConfig);
-    tunnelArgs.push('run', tunnelName);
-    console.log(`[tunnel] Starting named tunnel: ${tunnelName}`);
-  } else {
-    tunnelArgs = ['tunnel', '--url', `http://localhost:${PORT}`];
-    console.log('[tunnel] Starting quick tunnel...');
-  }
-
-  const tunnel = spawn('cloudflared', tunnelArgs, {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  tunnel.stderr.on('data', (data) => {
-    const line = data.toString();
-    const urlMatch = line.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-    if (urlMatch) {
-      console.log(`\n  Tunnel URL: ${urlMatch[0]}\n`);
-    }
-    if (line.includes('ERR') || line.includes('failed')) {
-      console.error('[tunnel]', line.trim());
-    }
-  });
-
-  tunnel.on('exit', (code) => {
-    console.error(`[tunnel] cloudflared exited with code ${code}`);
-    if (code !== 0) {
-      console.log('[tunnel] Retrying in 5s...');
-      setTimeout(startTunnel, 5000);
-    }
-  });
-
-  process.on('SIGINT', () => {
-    tunnel.kill();
-    process.exit();
-  });
-
-  process.on('SIGTERM', () => {
-    tunnel.kill();
-    process.exit();
-  });
-}

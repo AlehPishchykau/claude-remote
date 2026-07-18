@@ -1,13 +1,11 @@
 {
   "name": "claude-remote",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Remote web access to Claude Code sessions",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "remote": "node server.js & bash tunnel.sh",
-    "tunnel:cf": "node server.js --tunnel",
-    "dev": "node server.js"
+    "server": "node server.js",
+    "agent": "node agent.js"
   },
   "dependencies": {
     "express": "^4.18.2",

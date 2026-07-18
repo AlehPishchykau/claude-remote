@@ -30,6 +30,21 @@
     $('#auth-screen').classList.add('hidden');
     $('#app').classList.remove('hidden');
     loadSessions();
+    checkAgentStatus();
+  }
+
+  async function checkAgentStatus() {
+    try {
+      const status = await api('GET', '/status');
+      const indicator = $('#agent-status');
+      if (status.agentOnline) {
+        indicator.className = 'agent-status online';
+        indicator.textContent = 'Agent online';
+      } else {
+        indicator.className = 'agent-status offline';
+        indicator.textContent = 'Agent offline';
+      }
+    } catch {}
   }
 
   function logout() {
@@ -247,10 +262,10 @@
       });
   }
 
-  // Refresh sessions periodically
   setInterval(() => {
     if (token && !$('#app').classList.contains('hidden')) {
       loadSessions();
+      checkAgentStatus();
     }
   }, 5000);
 })();

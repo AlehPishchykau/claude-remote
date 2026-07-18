@@ -120,6 +120,21 @@ button:hover {
   border-radius: 6px;
 }
 
+.agent-status {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-status.online {
+  color: var(--success);
+}
+
+.agent-status.offline {
+  color: var(--danger);
+}
+
 #session-list {
   flex: 1;
   overflow-y: auto;
