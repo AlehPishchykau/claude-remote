@@ -81,6 +81,12 @@ function connect() {
           }
           break;
         }
+        case 'create-chat-session':
+          createChatSession(msg.id, msg.cwd, msg.resumeId);
+          break;
+        case 'chat-message':
+          handleChatMessage(msg.sessionId, msg.text, msg.images);
+          break;
       }
     } catch (err) {
       console.error(`[${ts()}] Message error:`, err.message);
@@ -307,30 +313,149 @@ async function getConversation(file) {
       if (!obj.message) continue;
 
       const content = obj.message.content;
-      let text = '';
 
       if (typeof content === 'string') {
-        text = content;
+        if (content.trim()) messages.push({ role: obj.type, text: content });
       } else if (Array.isArray(content)) {
-        const parts = [];
+        // Collect tool_use blocks by id for matching with tool_results
+        const toolUseMap = {};
         for (const block of content) {
-          if (block.type === 'text') parts.push(block.text);
-          else if (block.type === 'tool_use') parts.push(`[tool: ${block.name}]`);
-          else if (block.type === 'tool_result') {
-            const rc = block.content;
-            if (typeof rc === 'string') parts.push(rc.slice(0, 200));
-          } else if (block.type === 'thinking') continue;
+          if (block.type === 'tool_use') toolUseMap[block.id] = block;
         }
-        text = parts.join('\n');
+
+        for (const block of content) {
+          if (block.type === 'thinking') continue;
+          if (block.type === 'text') {
+            const t = block.text?.trim();
+            if (t) messages.push({ role: obj.type === 'user' ? 'user' : 'assistant', text: t });
+          } else if (block.type === 'tool_use') {
+            let input = '';
+            if (block.name === 'Bash') input = block.input?.command || '';
+            else if (block.name === 'Read') input = block.input?.file_path || '';
+            else if (block.name === 'Edit' || block.name === 'Write') input = block.input?.file_path || '';
+            else input = JSON.stringify(block.input || {}).slice(0, 200);
+            messages.push({
+              role: 'tool',
+              tool: block.name,
+              toolId: block.id,
+              description: block.input?.description || '',
+              input: input.slice(0, 500),
+            });
+          } else if (block.type === 'tool_result') {
+            const prev = messages[messages.length - 1];
+            if (prev && prev.role === 'tool' && prev.toolId === block.tool_use_id) {
+              let out = '';
+              if (typeof block.content === 'string') out = block.content;
+              else if (Array.isArray(block.content)) {
+                out = block.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+              }
+              prev.output = out.slice(0, 1000);
+            }
+          }
+        }
       }
-
-      if (!text || text === '[tool_result]') continue;
-
-      messages.push({ role: obj.type, text });
     } catch {}
   }
 
   return { title: aiTitle, messages };
+}
+
+// ── Chat sessions (structured JSON mode) ──
+
+const chatSessions = new Map();
+
+function createChatSession(id, cwd, resumeId) {
+  const workDir = resolveDir(cwd);
+  chatSessions.set(id, { id, cwd: workDir, claudeSessionId: resumeId || null, busy: false });
+  console.log(`[${ts()}] Chat session ${id.slice(0, 8)} created (claude: ${resumeId ? resumeId.slice(0, 8) : 'new'})`);
+  send({ type: 'chat-session-ready', sessionId: id, cwd: workDir, claudeSessionId: resumeId || null });
+}
+
+function handleChatMessage(sessionId, text, images) {
+  const session = chatSessions.get(sessionId);
+  if (!session) { send({ type: 'chat-error', sessionId, error: 'Session not found' }); return; }
+  if (session.busy) { send({ type: 'chat-error', sessionId, error: 'Busy' }); return; }
+
+  session.busy = true;
+  send({ type: 'chat-thinking', sessionId });
+
+  const savedFiles = [];
+  if (images && images.length > 0) {
+    const tmpDir = path.join(os.tmpdir(), 'claude-remote-images');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    for (const img of images) {
+      const ext = img.mimeType.split('/')[1] || 'png';
+      const fileName = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const filePath = path.join(tmpDir, fileName);
+      fs.writeFileSync(filePath, Buffer.from(img.base64, 'base64'));
+      savedFiles.push(filePath);
+    }
+  }
+
+  let prompt = text || '';
+  if (savedFiles.length > 0) {
+    const fileRefs = savedFiles.map(f => f).join(', ');
+    if (prompt) {
+      prompt = prompt + '\n\n[Attached images: ' + fileRefs + '] Use the Read tool to view them.';
+    } else {
+      prompt = '[Attached images: ' + fileRefs + '] Use the Read tool to view and describe them.';
+    }
+  }
+
+  const args = ['-p', '--output-format', 'stream-json', '--verbose'];
+  if (session.claudeSessionId) {
+    args.push('--resume', session.claudeSessionId);
+  }
+
+  const env = buildEnv(session.cwd);
+  const proc = spawn('claude', args, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env,
+    cwd: session.cwd,
+  });
+
+  let buffer = '';
+
+  proc.stdout.on('data', (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === 'assistant' && obj.message?.content) {
+          if (obj.session_id && !session.claudeSessionId) {
+            session.claudeSessionId = obj.session_id;
+            console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
+          }
+          for (const block of obj.message.content) {
+            if (block.type === 'text') {
+              send({ type: 'chat-text', sessionId, text: block.text, done: false });
+            } else if (block.type === 'tool_use') {
+              send({ type: 'chat-tool', sessionId, tool: block.name, input: block.input });
+            }
+          }
+        } else if (obj.type === 'result') {
+          if (obj.session_id && !session.claudeSessionId) {
+            session.claudeSessionId = obj.session_id;
+            console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
+          }
+          send({ type: 'chat-text', sessionId, text: obj.result || '', done: true });
+        }
+      } catch {}
+    }
+  });
+
+  proc.stderr.on('data', () => {});
+
+  proc.on('exit', (code) => {
+    session.busy = false;
+    send({ type: 'chat-done', sessionId, exitCode: code });
+  });
+
+  proc.stdin.write(prompt);
+  proc.stdin.end();
 }
 
 process.on('SIGINT', () => {

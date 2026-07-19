@@ -97,7 +97,7 @@ app.get('/api/sessions', authMiddleware, (req, res) => {
   const list = [];
   for (const [id, s] of sessions) {
     if (s.agentKey === req.agent.accessKey) {
-      list.push({ id, cwd: s.cwd, createdAt: s.createdAt, alive: s.alive });
+      list.push({ id, cwd: s.cwd, createdAt: s.createdAt, alive: s.alive, mode: s.mode || 'terminal', conversationFile: s.conversationFile || null });
     }
   }
   res.json(list);
@@ -188,6 +188,41 @@ app.get('/api/conversations/:file(*)', authMiddleware, async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// ── Chat sessions ──
+
+app.post('/api/chat-sessions', authMiddleware, (req, res) => {
+  const agent = req.agent;
+  if (!agent.ws || agent.ws.readyState !== 1) {
+    return res.status(503).json({ error: 'Agent is offline' });
+  }
+
+  const { cwd, resumeId, conversationFile } = req.body;
+  const id = uuidv4();
+
+  const session = {
+    id,
+    agentKey: agent.accessKey,
+    cwd: cwd || '~',
+    createdAt: new Date().toISOString(),
+    mode: 'chat',
+    alive: true,
+    history: [],
+    conversationFile: conversationFile || null,
+    subscribers: new Set(),
+  };
+
+  sessions.set(id, session);
+
+  agent.ws.send(JSON.stringify({
+    type: 'create-chat-session',
+    id,
+    cwd: session.cwd,
+    resumeId: resumeId || null,
+  }));
+
+  res.json({ id, cwd: session.cwd, mode: 'chat' });
 });
 
 app.get('/api/admin/agents', (req, res) => {
@@ -290,6 +325,15 @@ function handleAgentConnection(ws, url) {
       } else if (msg.type === 'exit') {
         session.alive = false;
         broadcastToSession(msg.sessionId, { type: 'exit', exitCode: msg.exitCode });
+      } else if (msg.type === 'chat-session-ready' || msg.type === 'chat-text' || msg.type === 'chat-tool' || msg.type === 'chat-thinking' || msg.type === 'chat-done' || msg.type === 'chat-error') {
+        if (msg.type === 'chat-text' || msg.type === 'chat-tool') {
+          if (!session.chatHistory) session.chatHistory = [];
+          session.chatHistory.push(msg);
+          if (session.chatHistory.length > 5000) {
+            session.chatHistory = session.chatHistory.slice(-2500);
+          }
+        }
+        broadcastToSession(msg.sessionId, msg);
       }
     } catch {}
   });
@@ -325,15 +369,24 @@ function handleBrowserConnection(ws, url) {
 
   session.subscribers.add(ws);
 
-  const recentHistory = session.history.slice(-2000).join('');
-  if (recentHistory) {
-    ws.send(JSON.stringify({ type: 'history', data: recentHistory }));
+  if (session.mode === 'chat' && session.chatHistory && session.chatHistory.length > 0) {
+    ws.send(JSON.stringify({ type: 'chat-history', messages: session.chatHistory }));
+  } else {
+    const recentHistory = session.history.slice(-2000).join('');
+    if (recentHistory) {
+      ws.send(JSON.stringify({ type: 'history', data: recentHistory }));
+    }
   }
 
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
       if (!session.alive) return;
+
+      if (msg.type === 'chat-message' && session.mode === 'chat') {
+        if (!session.chatHistory) session.chatHistory = [];
+        session.chatHistory.push({ type: 'chat-user', text: msg.text });
+      }
 
       if (agent.ws && agent.ws.readyState === 1) {
         agent.ws.send(JSON.stringify({ ...msg, sessionId }));

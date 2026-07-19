@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#1a1a1a">
   <title>Claude Remote</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>C</text></svg>">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -39,6 +39,7 @@
         <button id="new-session-btn" title="New session">+</button>
       </div>
       <div id="session-list"></div>
+      <div class="sidebar-divider"></div>
       <div class="section-header">
         <span>History</span>
       </div>
@@ -49,10 +50,11 @@
     </aside>
 
     <main id="main">
-      <div id="mobile-topbar" class="mobile-only">
-        <button id="menu-btn" class="btn-icon" title="Menu">☰</button>
+      <div id="topbar">
+        <button id="menu-btn" class="btn-icon" title="Menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
         <span id="topbar-title">Claude Remote</span>
         <button id="topbar-new-btn" class="btn-icon" title="New session">+</button>
+        <button id="kill-session-btn" class="btn-danger hidden" title="Kill session">Kill</button>
       </div>
       <div id="no-session">
         <div class="empty-state">
@@ -62,6 +64,9 @@
         </div>
       </div>
       <div id="terminal-container" class="hidden"></div>
+      <div id="chat-container" class="hidden">
+        <div id="chat-messages"></div>
+      </div>
       <div id="history-view" class="hidden">
         <div class="history-header">
           <button id="history-back" class="btn-ghost">&larr; Back</button>
@@ -70,17 +75,15 @@
         </div>
         <div id="history-messages"></div>
       </div>
-      <button id="voice-btn" class="btn-icon hidden" title="Voice input">🎤</button>
-      <div id="voice-indicator" class="hidden">
-        <div class="voice-pulse"></div>
-        <span>Listening...</span>
-        <button id="voice-stop-btn" class="btn-ghost btn-sm">Stop</button>
+      <div id="image-preview-bar" class="hidden">
+        <div id="image-previews"></div>
       </div>
-      <div id="session-bar" class="hidden">
-        <span id="session-info"></span>
-        <div class="session-bar-actions">
-          <button id="kill-session-btn" class="btn-danger" title="Kill session">Kill</button>
-        </div>
+      <div id="input-bar" class="hidden">
+        <button id="voice-btn" class="input-bar-btn" title="Voice input"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="1" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+        <button id="attach-btn" class="input-bar-btn" title="Attach image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
+        <input type="file" id="image-input" accept="image/*" multiple style="display:none">
+        <input type="text" id="chat-input" placeholder="Message..." autocomplete="off">
+        <button id="send-btn" class="input-bar-btn" title="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
       </div>
     </main>
   </div>
