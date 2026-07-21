@@ -390,6 +390,31 @@ button:active { opacity: 0.8; }
   padding: 20px;
 }
 
+.logo-large, .logo-small {
+  -webkit-mask-image: url(/logo.svg);
+  mask-image: url(/logo.svg);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.logo-large {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 16px;
+  background-color: var(--fg-dim);
+}
+
+.logo-small {
+  width: 28px;
+  height: 28px;
+  background-color: var(--fg);
+  flex-shrink: 0;
+}
+
 .empty-state {
   text-align: center;
   color: var(--fg-dim);
