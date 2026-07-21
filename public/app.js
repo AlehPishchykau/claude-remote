@@ -418,26 +418,102 @@
   }
 
   function renderMd(text) {
-    let html = escapeHtml(text);
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-    html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
-    html = html.replace(/<\/ul>\s*<ul>/g, '');
-    html = html.replace(/\n{2,}/g, '<br><br>');
-    html = html.replace(/\n/g, '<br>');
-    html = html.replace(/<br>(<h[234]>)/g, '$1');
-    html = html.replace(/(<\/h[234]>)<br>/g, '$1');
-    html = html.replace(/<br>(<pre>)/g, '$1');
-    html = html.replace(/(<\/pre>)<br>/g, '$1');
-    html = html.replace(/<br>(<ul>)/g, '$1');
-    html = html.replace(/(<\/ul>)<br>/g, '$1');
-    return html;
+    const lines = text.split('\n');
+    const out = [];
+    let i = 0;
+
+    function inline(s) {
+      s = escapeHtml(s);
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+      return s;
+    }
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (line.startsWith('```')) {
+        const lang = line.slice(3).trim();
+        const code = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith('```')) {
+          code.push(escapeHtml(lines[i]));
+          i++;
+        }
+        i++;
+        out.push('<pre>' + (lang ? '<code class="lang-' + escapeHtml(lang) + '">' : '<code>') + code.join('\n') + '</code></pre>');
+        continue;
+      }
+
+      if (/^\|(.+)\|$/.test(line)) {
+        const rows = [];
+        while (i < lines.length && /^\|(.+)\|$/.test(lines[i])) {
+          rows.push(lines[i]);
+          i++;
+        }
+        if (rows.length >= 2) {
+          const headerCells = rows[0].split('|').slice(1, -1).map(c => c.trim());
+          const isSep = /^[\s|:-]+$/.test(rows[1]);
+          const startRow = isSep ? 2 : 1;
+          let html = '<div class="table-wrap"><table><thead><tr>';
+          for (const c of headerCells) html += '<th>' + inline(c) + '</th>';
+          html += '</tr></thead><tbody>';
+          for (let r = startRow; r < rows.length; r++) {
+            const cells = rows[r].split('|').slice(1, -1).map(c => c.trim());
+            html += '<tr>';
+            for (const c of cells) html += '<td>' + inline(c) + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table></div>';
+          out.push(html);
+        }
+        continue;
+      }
+
+      const hMatch = line.match(/^(#{1,4})\s+(.+)$/);
+      if (hMatch) {
+        const level = hMatch[1].length + 1;
+        out.push('<h' + level + '>' + inline(hMatch[2]) + '</h' + level + '>');
+        i++;
+        continue;
+      }
+
+      if (/^[-*]\s/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+          items.push(inline(lines[i].replace(/^[-*]\s+/, '')));
+          i++;
+        }
+        out.push('<ul>' + items.map(li => '<li>' + li + '</li>').join('') + '</ul>');
+        continue;
+      }
+
+      if (/^\d+\.\s/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+          items.push(inline(lines[i].replace(/^\d+\.\s+/, '')));
+          i++;
+        }
+        out.push('<ol>' + items.map(li => '<li>' + li + '</li>').join('') + '</ol>');
+        continue;
+      }
+
+      if (line.trim() === '') {
+        out.push('');
+        i++;
+        continue;
+      }
+
+      const para = [];
+      while (i < lines.length && lines[i].trim() !== '' && !lines[i].startsWith('#') && !lines[i].startsWith('```') && !/^\|/.test(lines[i]) && !/^[-*]\s/.test(lines[i]) && !/^\d+\.\s/.test(lines[i])) {
+        para.push(inline(lines[i]));
+        i++;
+      }
+      out.push('<p>' + para.join('<br>') + '</p>');
+    }
+
+    return out.filter(s => s !== '').join('\n');
   }
 
   function appendChatMessage(role, text, done) {

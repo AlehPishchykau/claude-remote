@@ -504,6 +504,42 @@ button:active { opacity: 0.8; }
   font-weight: 600;
 }
 
+.chat-msg.assistant ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.chat-msg.assistant p {
+  margin: 4px 0;
+}
+
+.chat-msg.assistant .table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.chat-msg.assistant table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.chat-msg.assistant th,
+.chat-msg.assistant td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.chat-msg.assistant th {
+  background: var(--bg-input);
+  font-weight: 600;
+}
+
+.chat-msg.assistant tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .chat-tool-block {
   background: var(--bg-input);
   border-radius: 8px;
