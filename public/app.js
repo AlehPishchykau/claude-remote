@@ -1138,6 +1138,16 @@
 
   // ── Init ──
 
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const update = () => {
+      const kbOpen = window.innerHeight - vv.height > 100;
+      if (kbOpen) document.documentElement.style.setProperty('--sab', '0px');
+      else document.documentElement.style.removeProperty('--sab');
+    };
+    vv.addEventListener('resize', update);
+  }
+
   initVoice();
   renderSavedKeys();
 
