@@ -407,6 +407,8 @@ function handleChatMessage(sessionId, text, images) {
   });
 
   let buffer = '';
+  let lastTextLen = 0;
+  let sentToolIds = new Set();
 
   proc.stdout.on('data', (chunk) => {
     buffer += chunk.toString();
@@ -421,12 +423,19 @@ function handleChatMessage(sessionId, text, images) {
             session.claudeSessionId = obj.session_id;
             console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
           }
+          let fullText = '';
           for (const block of obj.message.content) {
             if (block.type === 'text') {
-              send({ type: 'chat-text', sessionId, text: block.text, done: false });
-            } else if (block.type === 'tool_use') {
+              fullText += block.text;
+            } else if (block.type === 'tool_use' && !sentToolIds.has(block.id)) {
+              sentToolIds.add(block.id);
               send({ type: 'chat-tool', sessionId, tool: block.name, input: block.input });
             }
+          }
+          if (fullText.length > lastTextLen) {
+            const delta = fullText.slice(lastTextLen);
+            lastTextLen = fullText.length;
+            send({ type: 'chat-text', sessionId, text: delta, done: false });
           }
         } else if (obj.type === 'result') {
           if (obj.session_id && !session.claudeSessionId) {
