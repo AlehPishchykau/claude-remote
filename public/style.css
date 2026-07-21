@@ -880,4 +880,8 @@ button:active { opacity: 0.8; }
 @media (max-width: 768px) {
   #terminal-container { padding: 4px; }
   .auth-card { padding: 32px 20px; }
+  #sidebar { width: 100%; }
+  .history-item-delete { display: block; }
+  .modal { padding: 12px; }
+  .modal-content { width: 100%; }
 }
