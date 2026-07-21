@@ -87,6 +87,63 @@ body {
   font-size: 13px;
 }
 
+/* ── Saved Keys ── */
+
+#saved-keys {
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.saved-key-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.saved-key-item:hover {
+  border-color: var(--accent);
+}
+
+.saved-key-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.saved-key-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.saved-key-masked {
+  font-size: 12px;
+  color: var(--fg-dim);
+  font-family: monospace;
+}
+
+.saved-key-remove {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.saved-key-remove:hover {
+  color: var(--red);
+}
+
 /* ── Buttons ── */
 
 button {

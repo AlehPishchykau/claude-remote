@@ -68,6 +68,51 @@
     el.classList.remove('hidden');
   }
 
+  function getSavedKeys() {
+    try { return JSON.parse(localStorage.getItem('cr_keys') || '[]'); } catch { return []; }
+  }
+
+  function saveKeyEntry(key, agentName) {
+    const keys = getSavedKeys().filter(k => k.key !== key);
+    keys.unshift({ key, name: agentName, ts: Date.now() });
+    if (keys.length > 10) keys.length = 10;
+    localStorage.setItem('cr_keys', JSON.stringify(keys));
+  }
+
+  function removeKeyEntry(key) {
+    const keys = getSavedKeys().filter(k => k.key !== key);
+    localStorage.setItem('cr_keys', JSON.stringify(keys));
+    renderSavedKeys();
+  }
+
+  function renderSavedKeys() {
+    const container = $('#saved-keys');
+    const keys = getSavedKeys();
+    if (keys.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = keys.map(k => {
+      const masked = k.key.slice(0, 4) + '····' + k.key.slice(-4);
+      const label = k.name || masked;
+      return '<div class="saved-key-item" data-key="' + escapeHtml(k.key) + '">' +
+        '<div class="saved-key-info">' +
+          '<span class="saved-key-name">' + escapeHtml(label) + '</span>' +
+          '<span class="saved-key-masked">' + escapeHtml(masked) + '</span>' +
+        '</div>' +
+        '<button class="saved-key-remove" title="Remove">&times;</button>' +
+      '</div>';
+    }).join('');
+    container.querySelectorAll('.saved-key-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.saved-key-remove')) return;
+        $('#token-input').value = el.dataset.key;
+        $('#auth-btn').click();
+      });
+      el.querySelector('.saved-key-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeKeyEntry(el.dataset.key);
+      });
+    });
+  }
+
   // ── Agent ──
 
   function updateAgentCard() {
@@ -696,6 +741,7 @@
       const result = await tryLogin(key);
       accessKey = key;
       localStorage.setItem('cr_key', key);
+      saveKeyEntry(key, result.agent.name);
       showApp(result.agent);
     } catch (err) {
       showAuthError(err.message);
@@ -885,6 +931,7 @@
   // ── Init ──
 
   initVoice();
+  renderSavedKeys();
 
   if (accessKey) {
     tryLogin(accessKey)
