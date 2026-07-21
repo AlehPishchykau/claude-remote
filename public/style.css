@@ -26,7 +26,6 @@ body {
   color: var(--fg);
   height: var(--vh);
   overflow: hidden;
-  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .hidden { display: none !important; }
@@ -213,7 +212,6 @@ button:active { opacity: 0.8; }
   overflow: hidden;
   transform: translateX(-100%);
   transition: transform 0.2s ease;
-  padding-top: env(safe-area-inset-top, 0px);
 }
 
 #sidebar.open { transform: translateX(0); }
