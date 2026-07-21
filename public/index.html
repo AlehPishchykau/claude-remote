@@ -46,6 +46,7 @@
       </div>
       <div id="history-list"></div>
       <div class="sidebar-footer">
+        <button id="settings-btn" class="btn-secondary">Settings</button>
         <button id="logout-btn">Disconnect</button>
       </div>
     </aside>
@@ -98,6 +99,18 @@
       <div class="modal-actions">
         <button id="cancel-modal" class="btn-secondary">Cancel</button>
         <button id="create-session-btn">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Settings</h3>
+      <div id="settings-version" class="settings-info"></div>
+      <label for="model-select">Model</label>
+      <div id="model-options" class="model-options"></div>
+      <div class="modal-actions">
+        <button id="settings-close" class="btn-secondary">Close</button>
       </div>
     </div>
   </div>

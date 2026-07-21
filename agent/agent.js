@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const os = require('os');
 const WebSocket = require('ws');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
@@ -214,6 +214,8 @@ async function handleRequest(msg) {
     if (action === 'list-conversations') data = await listConversations();
     else if (action === 'get-conversation') data = await getConversation(params.file);
     else if (action === 'delete-conversation') data = deleteConversation(params.file);
+    else if (action === 'get-settings') data = getSettings();
+    else if (action === 'set-model') data = setModel(params.model);
     else { sendResponse(reqId, null, 'Unknown action'); return; }
     sendResponse(reqId, data);
   } catch (err) {
@@ -359,6 +361,36 @@ function deleteConversation(file) {
   if (!fs.existsSync(filePath)) throw new Error('Not found');
   fs.unlinkSync(filePath);
   return { ok: true };
+}
+
+// ── Settings ──
+
+const CLAUDE_SETTINGS = path.join(process.env.HOME, '.claude', 'settings.json');
+const AVAILABLE_MODELS = [
+  { id: 'sonnet', name: 'Claude Sonnet', description: 'Fast and capable' },
+  { id: 'opus', name: 'Claude Opus', description: 'Most intelligent' },
+  { id: 'haiku', name: 'Claude Haiku', description: 'Fastest, lightweight' },
+];
+
+function getSettings() {
+  let settings = {};
+  try { settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf-8')); } catch {}
+  let version = '';
+  try { version = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim(); } catch {}
+  return {
+    model: settings.model || 'sonnet',
+    version,
+    availableModels: AVAILABLE_MODELS,
+  };
+}
+
+function setModel(model) {
+  if (!AVAILABLE_MODELS.some(m => m.id === model)) throw new Error('Invalid model');
+  let settings = {};
+  try { settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf-8')); } catch {}
+  settings.model = model;
+  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2) + '\n');
+  return { ok: true, model };
 }
 
 // ── Chat sessions (structured JSON mode) ──

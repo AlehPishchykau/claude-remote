@@ -994,6 +994,43 @@
     onViewportResize();
   }
 
+  // ── Settings ──
+
+  $('#settings-btn').addEventListener('click', async () => {
+    closeSidebar();
+    $('#settings-modal').classList.remove('hidden');
+    $('#model-options').innerHTML = '<div style="color:var(--fg-dim);font-size:13px">Loading...</div>';
+    try {
+      const data = await api('GET', '/settings');
+      $('#settings-version').textContent = data.version || '';
+      const container = $('#model-options');
+      container.innerHTML = '';
+      for (const m of data.availableModels) {
+        const btn = document.createElement('button');
+        btn.className = 'model-option' + (m.id === data.model ? ' active' : '');
+        btn.innerHTML = '<strong>' + escapeHtml(m.name) + '</strong><span>' + escapeHtml(m.description) + '</span>';
+        btn.addEventListener('click', async () => {
+          if (m.id === data.model) return;
+          try {
+            await api('PUT', '/settings/model', { model: m.id });
+            data.model = m.id;
+            container.querySelectorAll('.model-option').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        container.appendChild(btn);
+      }
+    } catch (err) {
+      $('#model-options').innerHTML = '<div style="color:var(--red);font-size:13px">' + escapeHtml(err.message) + '</div>';
+    }
+  });
+
+  $('#settings-close').addEventListener('click', () => {
+    $('#settings-modal').classList.add('hidden');
+  });
+
   // ── Init ──
 
   initVoice();

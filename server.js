@@ -199,6 +199,26 @@ app.delete('/api/conversations/:file(*)', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Settings ──
+
+app.get('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    const data = await agentRequest(req.agent, 'get-settings', {});
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings/model', authMiddleware, async (req, res) => {
+  try {
+    const data = await agentRequest(req.agent, 'set-model', { model: req.body.model });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Chat sessions ──
 
 app.post('/api/chat-sessions', authMiddleware, (req, res) => {

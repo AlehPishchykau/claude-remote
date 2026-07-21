@@ -334,8 +334,11 @@ button:active { opacity: 0.8; }
 }
 
 .sidebar-footer {
-  padding: 10px 12px;
+  padding: 12px 16px;
   border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .sidebar-footer button {
@@ -874,6 +877,52 @@ button:active { opacity: 0.8; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Settings ── */
+
+.settings-info {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-bottom: 16px;
+}
+
+.model-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.model-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+
+.model-option strong {
+  font-weight: 600;
+}
+
+.model-option span {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.model-option:hover { border-color: var(--accent); }
+
+.model-option.active {
+  border-color: var(--accent);
+  background: rgba(124, 155, 245, 0.1);
+}
 
 /* ── Mobile ── */
 
