@@ -8,6 +8,11 @@
   let ws = null;
   let recognition = null;
   let isRecording = false;
+  const voiceLangs = [
+    { code: 'en-US', label: 'EN' },
+    { code: 'ru-RU', label: 'RU' },
+  ];
+  let voiceLangIndex = parseInt(localStorage.getItem('cr_voice_lang') || '0', 10) % voiceLangs.length;
   let chatBusy = false;
   let pendingImages = [];
 
@@ -694,7 +699,7 @@
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
+    recognition.lang = voiceLangs[voiceLangIndex].code;
 
     recognition.onresult = (event) => {
       let finalText = '';
@@ -1101,7 +1106,31 @@
     } catch (err) {
       $('#model-options').innerHTML = '<div style="color:var(--red);font-size:13px">' + escapeHtml(err.message) + '</div>';
     }
+    renderVoiceLangOptions();
   });
+
+  function renderVoiceLangOptions() {
+    const container = $('#voice-lang-options');
+    container.innerHTML = '';
+    voiceLangs.forEach((lang, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'model-option' + (i === voiceLangIndex ? ' active' : '');
+      btn.innerHTML = '<strong>' + escapeHtml(lang.label) + '</strong><span>' + escapeHtml(lang.code) + '</span>';
+      btn.addEventListener('click', () => {
+        voiceLangIndex = i;
+        localStorage.setItem('cr_voice_lang', String(i));
+        if (recognition) {
+          const wasRecording = isRecording;
+          if (wasRecording) { try { recognition.stop(); } catch {} isRecording = false; }
+          recognition.lang = lang.code;
+          if (wasRecording) { try { recognition.start(); } catch {} isRecording = true; }
+        }
+        container.querySelectorAll('.model-option').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+      container.appendChild(btn);
+    });
+  }
 
   $('#settings-close').addEventListener('click', () => {
     $('#settings-modal').classList.add('hidden');
