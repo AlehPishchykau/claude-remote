@@ -213,6 +213,7 @@ async function handleRequest(msg) {
     let data;
     if (action === 'list-conversations') data = await listConversations();
     else if (action === 'get-conversation') data = await getConversation(params.file);
+    else if (action === 'delete-conversation') data = deleteConversation(params.file);
     else { sendResponse(reqId, null, 'Unknown action'); return; }
     sendResponse(reqId, data);
   } catch (err) {
@@ -350,6 +351,14 @@ async function getConversation(file) {
   }
 
   return { title: aiTitle, messages };
+}
+
+function deleteConversation(file) {
+  const filePath = path.join(CLAUDE_PROJECTS, file);
+  if (!filePath.startsWith(CLAUDE_PROJECTS)) throw new Error('Invalid path');
+  if (!fs.existsSync(filePath)) throw new Error('Not found');
+  fs.unlinkSync(filePath);
+  return { ok: true };
 }
 
 // ── Chat sessions (structured JSON mode) ──

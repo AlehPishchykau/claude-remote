@@ -190,6 +190,15 @@ app.get('/api/conversations/:file(*)', authMiddleware, async (req, res) => {
   }
 });
 
+app.delete('/api/conversations/:file(*)', authMiddleware, async (req, res) => {
+  try {
+    const data = await agentRequest(req.agent, 'delete-conversation', { file: req.params.file });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ── Chat sessions ──
 
 app.post('/api/chat-sessions', authMiddleware, (req, res) => {

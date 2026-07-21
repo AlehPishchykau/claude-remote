@@ -698,7 +698,25 @@
       for (const c of proj.conversations.slice(0, 5)) {
         const div = document.createElement('div');
         div.className = 'history-item';
-        div.textContent = c.title;
+        const title = document.createElement('span');
+        title.className = 'history-item-title';
+        title.textContent = c.title;
+        div.appendChild(title);
+        const del = document.createElement('button');
+        del.className = 'history-item-delete';
+        del.innerHTML = '&times;';
+        del.title = 'Delete';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Delete this conversation?')) return;
+          try {
+            await api('DELETE', '/conversations/' + encodeURIComponent(c.file));
+            loadHistory();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+        div.appendChild(del);
         div.addEventListener('click', () => {
           openConversation(c, c.cwd);
           closeSidebar();
