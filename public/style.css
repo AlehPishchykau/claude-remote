@@ -409,8 +409,8 @@ button:active { opacity: 0.8; }
 }
 
 .logo-small {
-  width: 28px;
-  height: 28px;
+  width: 38px;
+  height: 38px;
   background-color: var(--fg);
   flex-shrink: 0;
 }
