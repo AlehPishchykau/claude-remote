@@ -1078,7 +1078,6 @@
   // ── Settings ──
 
   $('#settings-btn').addEventListener('click', async () => {
-    closeSidebar();
     try {
       const data = await api('GET', '/settings');
       $('#settings-version').textContent = data.version || '';
