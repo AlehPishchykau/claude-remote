@@ -175,7 +175,24 @@
         '<div class="session-cwd"><span class="dot ' + (s.alive ? 'online' : 'offline') + '"></span>' +
         escapeHtml(shortCwd) + '</div>' +
         '<div class="session-meta">' + time + ' · ' + status + '</div>';
-      div.addEventListener('click', () => {
+      div.addEventListener('click', async () => {
+        if (!s.alive && s.mode === 'chat' && s.claudeSessionId) {
+          closeSidebar();
+          try {
+            await api('DELETE', '/sessions/' + s.id);
+          } catch {}
+          try {
+            const session = await api('POST', '/chat-sessions', {
+              cwd: s.cwd,
+              resumeId: s.claudeSessionId,
+              conversationFile: s.conversationFile,
+            });
+            openChatSession(session.id, { ...s, ...session });
+          } catch (err) {
+            alert(err.message);
+          }
+          return;
+        }
         if (s.mode === 'chat') {
           openChatSession(s.id, s);
         } else {
@@ -400,22 +417,54 @@
     });
   }
 
+  function renderMd(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+    html = html.replace(/\n{2,}/g, '<br><br>');
+    html = html.replace(/\n/g, '<br>');
+    html = html.replace(/<br>(<h[234]>)/g, '$1');
+    html = html.replace(/(<\/h[234]>)<br>/g, '$1');
+    html = html.replace(/<br>(<pre>)/g, '$1');
+    html = html.replace(/(<\/pre>)<br>/g, '$1');
+    html = html.replace(/<br>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<br>/g, '$1');
+    return html;
+  }
+
   function appendChatMessage(role, text, done) {
     const container = $('#chat-messages');
     if (role === 'assistant') {
       let last = container.querySelector('.chat-msg.assistant:last-child');
       if (last && !last.dataset.done) {
-        last.textContent += text;
-        if (done) last.dataset.done = '1';
+        last._rawText = (last._rawText || '') + text;
+        if (done) {
+          last.innerHTML = renderMd(last._rawText);
+          last.dataset.done = '1';
+        } else {
+          last.textContent = last._rawText;
+        }
       } else {
         const div = document.createElement('div');
         div.className = 'chat-msg assistant';
-        div.textContent = text;
-        if (done) div.dataset.done = '1';
+        div._rawText = text;
+        if (done) {
+          div.innerHTML = renderMd(text);
+          div.dataset.done = '1';
+        } else {
+          div.textContent = text;
+        }
         container.appendChild(div);
       }
     } else if (role === 'thinking') {
-      // Remove previous thinking indicator
       const prev = container.querySelector('.chat-msg.thinking');
       if (prev) prev.remove();
       const div = document.createElement('div');
@@ -423,7 +472,6 @@
       div.textContent = text;
       container.appendChild(div);
     } else {
-      // Remove thinking indicator when real content arrives
       const thinking = container.querySelector('.chat-msg.thinking');
       if (thinking) thinking.remove();
       const div = document.createElement('div');

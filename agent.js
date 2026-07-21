@@ -168,6 +168,7 @@ function killSession(id) {
     session.proc.kill('SIGTERM');
   }
   sessions.delete(id);
+  chatSessions.delete(id);
   console.log(`[${ts()}] Session ${id.slice(0, 8)} killed`);
 }
 
@@ -441,7 +442,7 @@ function handleChatMessage(sessionId, text, images) {
             session.claudeSessionId = obj.session_id;
             console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
           }
-          send({ type: 'chat-text', sessionId, text: obj.result || '', done: true });
+          send({ type: 'chat-text', sessionId, text: '', done: true });
         }
       } catch {}
     }

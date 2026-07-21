@@ -452,6 +452,53 @@ button:active { opacity: 0.8; }
 
 .chat-msg.assistant {
   color: var(--fg);
+  white-space: normal;
+}
+
+.chat-msg.assistant code {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+}
+
+.chat-msg.assistant pre {
+  background: var(--bg-input);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.chat-msg.assistant pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+}
+
+.chat-msg.assistant h2,
+.chat-msg.assistant h3,
+.chat-msg.assistant h4 {
+  margin: 12px 0 4px;
+  font-weight: 600;
+}
+
+.chat-msg.assistant h2 { font-size: 16px; }
+.chat-msg.assistant h3 { font-size: 15px; }
+.chat-msg.assistant h4 { font-size: 14px; }
+
+.chat-msg.assistant ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.chat-msg.assistant li {
+  margin: 2px 0;
+}
+
+.chat-msg.assistant strong {
+  font-weight: 600;
 }
 
 .chat-tool-block {

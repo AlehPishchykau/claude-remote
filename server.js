@@ -97,7 +97,7 @@ app.get('/api/sessions', authMiddleware, (req, res) => {
   const list = [];
   for (const [id, s] of sessions) {
     if (s.agentKey === req.agent.accessKey) {
-      list.push({ id, cwd: s.cwd, createdAt: s.createdAt, alive: s.alive, mode: s.mode || 'terminal', conversationFile: s.conversationFile || null });
+      list.push({ id, cwd: s.cwd, createdAt: s.createdAt, alive: s.alive, mode: s.mode || 'terminal', conversationFile: s.conversationFile || null, claudeSessionId: s.claudeSessionId || null });
     }
   }
   res.json(list);
@@ -326,6 +326,9 @@ function handleAgentConnection(ws, url) {
         session.alive = false;
         broadcastToSession(msg.sessionId, { type: 'exit', exitCode: msg.exitCode });
       } else if (msg.type === 'chat-session-ready' || msg.type === 'chat-text' || msg.type === 'chat-tool' || msg.type === 'chat-thinking' || msg.type === 'chat-done' || msg.type === 'chat-error') {
+        if (msg.type === 'chat-session-ready' && msg.claudeSessionId) {
+          session.claudeSessionId = msg.claudeSessionId;
+        }
         if (msg.type === 'chat-text' || msg.type === 'chat-tool') {
           if (!session.chatHistory) session.chatHistory = [];
           session.chatHistory.push(msg);
@@ -401,12 +404,19 @@ function handleBrowserConnection(ws, url) {
   ws.on('error', () => {});
 }
 
+const SESSION_TTL = 30 * 60 * 1000;
+
 setInterval(() => {
   const now = Date.now();
   for (const [ip, attempts] of loginAttempts) {
     const recent = attempts.filter((t) => now - t < LOGIN_WINDOW);
     if (recent.length === 0) loginAttempts.delete(ip);
     else loginAttempts.set(ip, recent);
+  }
+  for (const [id, s] of sessions) {
+    if (!s.alive && now - new Date(s.createdAt).getTime() > SESSION_TTL && s.subscribers.size === 0) {
+      sessions.delete(id);
+    }
   }
 }, 60000);
 
