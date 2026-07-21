@@ -26,6 +26,8 @@ body {
   color: var(--fg);
   height: var(--vh);
   overflow: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: var(--sab, env(safe-area-inset-bottom, 0px));
 }
 
 .hidden { display: none !important; }
@@ -36,8 +38,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: var(--vh);
-  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  height: 100%;
+  padding: 20px;
 }
 
 .auth-card {
@@ -193,9 +195,7 @@ button:active { opacity: 0.8; }
 
 #app {
   display: flex;
-  height: var(--vh);
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: var(--sab, env(safe-area-inset-bottom, 0px));
+  height: 100%;
 }
 
 /* ── Sidebar ── */
