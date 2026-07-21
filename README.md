@@ -50,7 +50,22 @@ location / {
 }
 ```
 
-### Agent (your Mac)
+### Agent (any machine)
+
+Quick install with npx (no cloning needed):
+
+```bash
+npx claude-remote-agent --key <YOUR_KEY> --name MyMac
+```
+
+Or install globally:
+
+```bash
+npm install -g claude-remote-agent
+claude-remote-agent --key <YOUR_KEY> --name DevContainer --server wss://your-domain.com
+```
+
+Or from the repo:
 
 ```bash
 cp .env.example .env
