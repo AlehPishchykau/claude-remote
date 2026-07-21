@@ -1079,8 +1079,6 @@
 
   $('#settings-btn').addEventListener('click', async () => {
     closeSidebar();
-    $('#settings-modal').classList.remove('hidden');
-    $('#model-options').innerHTML = '<div style="color:var(--fg-dim);font-size:13px">Loading...</div>';
     try {
       const data = await api('GET', '/settings');
       $('#settings-version').textContent = data.version || '';
@@ -1103,10 +1101,12 @@
         });
         container.appendChild(btn);
       }
+      renderVoiceLangOptions();
+      $('#settings-modal').classList.remove('hidden');
     } catch (err) {
       $('#model-options').innerHTML = '<div style="color:var(--red);font-size:13px">' + escapeHtml(err.message) + '</div>';
+      $('#settings-modal').classList.remove('hidden');
     }
-    renderVoiceLangOptions();
   });
 
   function renderVoiceLangOptions() {
