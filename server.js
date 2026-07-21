@@ -56,6 +56,12 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/index.html' || req.path === '/sw.js') {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.post('/api/auth', (req, res) => {
