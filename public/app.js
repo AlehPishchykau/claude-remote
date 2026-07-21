@@ -1140,10 +1140,11 @@
 
   if (window.visualViewport) {
     const vv = window.visualViewport;
+    const appEl = $('#app');
     const update = () => {
       const kbOpen = window.innerHeight - vv.height > 100;
-      if (kbOpen) document.documentElement.style.setProperty('--sab', '0px');
-      else document.documentElement.style.removeProperty('--sab');
+      if (kbOpen) appEl.style.setProperty('--sab', '0px');
+      else appEl.style.removeProperty('--sab');
     };
     vv.addEventListener('resize', update);
   }
