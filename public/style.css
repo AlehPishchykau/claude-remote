@@ -353,6 +353,13 @@ button:active { opacity: 0.8; }
 
 .sidebar-footer button:hover { color: var(--fg); }
 
+.sidebar-footer button.btn-danger {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+.sidebar-footer button.btn-danger:hover { color: #fff; }
+
 /* ── Main ── */
 
 #main {
