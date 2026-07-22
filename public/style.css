@@ -34,10 +34,23 @@ body {
 
 #splash-screen {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   height: 100%;
 }
+
+#splash-topbar {
+  height: 57px;
+  flex-shrink: 0;
+}
+
+#splash-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
 
 /* ── Auth ── */
 
