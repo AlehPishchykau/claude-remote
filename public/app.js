@@ -75,7 +75,21 @@
     localStorage.removeItem('cr_key');
     accessKey = null;
     agentInfo = null;
-    location.reload();
+    currentSessionId = null;
+    sessionMode = null;
+    if (ws) { try { ws.close(); } catch {} ws = null; }
+    if (terminal) { try { terminal.dispose(); } catch {} terminal = null; }
+    stopRecording();
+    $('#terminal-container').classList.add('hidden');
+    $('#chat-container').classList.add('hidden');
+    $('#input-bar').classList.add('hidden');
+    hideSessionTopbar();
+    $('#no-session').classList.remove('hidden');
+    $('#app').classList.add('hidden');
+    $('#token-input').value = '';
+    $('#auth-error').classList.add('hidden');
+    renderSavedKeys();
+    showAuth();
   }
 
   function showAuthError(msg) {
