@@ -5,23 +5,23 @@ Agent for [Claude Remote](https://github.com/AlehPishchykau/claude-remote) — c
 ## Quick start
 
 ```bash
-npx claude-remote-agent --key <YOUR_KEY> --name MyMachine
+npx claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com
 ```
 
 Or install globally:
 
 ```bash
 npm install -g claude-remote-agent
-claude-remote-agent --key <YOUR_KEY>
+claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com --name MyMachine
 ```
 
 ## Options
 
 | Flag | Env variable | Description |
 |---|---|---|
-| `--key` | `AGENT_KEY` | Access key for authentication (required) |
+| `--key` | `AGENT_KEY` | Access key for browser login (required) |
+| `--server` | `SERVER_URL` | Relay server WebSocket URL (required) |
 | `--name` | `AGENT_NAME` | Agent display name (default: hostname) |
-| `--server` | `SERVER_URL` | Relay server URL (default: `wss://claude.pishchykau.eu`) |
 
 ## Requirements
 
@@ -37,10 +37,14 @@ Browser  ←WebSocket→  Relay Server  ←WebSocket→  Agent (this)  →  Clau
 
 The agent runs on your machine, connects to the relay server via WebSocket, and spawns Claude Code processes on demand. You access it through the web UI at your relay server's URL using the access key.
 
+## Self-hosting
+
+See the full setup guide (server + nginx + SSL) in the [main repo README](https://github.com/AlehPishchykau/claude-remote#self-hosting-guide).
+
 ## Running with PM2
 
 ```bash
 npm install -g claude-remote-agent pm2
-pm2 start claude-remote-agent -- --key <YOUR_KEY> --name MyServer
+pm2 start claude-remote-agent -- --key <YOUR_KEY> --server wss://your-domain.com --name MyServer
 pm2 save
 ```

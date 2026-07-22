@@ -1,108 +1,184 @@
 # Claude Remote
 
-Remote web access to Claude Code sessions. Run an agent on your Mac, connect from any browser — phone, tablet, another computer.
+Remote web access to Claude Code sessions. Run an agent on your machine, connect from any browser — phone, tablet, another computer.
 
 ## Architecture
 
 ```
-Browser  ←WebSocket→  VPS Server  ←WebSocket→  Agent (Mac)  →  Claude Code PTY
+Browser  ←WebSocket→  VPS Server  ←WebSocket→  Agent  →  Claude Code
 ```
 
-- **Agent** (`agent.js`) — runs on your machine, spawns Claude Code processes via a Python PTY bridge, reads conversation history from `~/.claude/projects/`
-- **Server** (`server.js`) — relay deployed on a VPS, routes WebSocket traffic between browsers and agents, serves the web UI
-- **PTY Bridge** (`pty-bridge.py`) — spawns Claude Code in a real terminal with proper signal handling and resize support
+- **Server** (`server.js`) — relay deployed on a VPS, routes traffic between browsers and agents, serves the web UI
+- **Agent** (`claude-remote-agent` npm package) — runs on any machine with Claude Code, connects to the server via WebSocket
+- **Browser** — web UI with terminal, chat, voice input, conversation history
 
-## Setup
+## Self-hosting guide
 
-### Prerequisites
+### 1. Requirements
 
-- Node.js 18+
-- Python 3
-- Claude Code CLI installed (`~/.local/bin/claude`)
-- A VPS with a domain and SSL (nginx reverse proxy recommended)
+- A VPS (Ubuntu recommended) with a domain and SSL certificate
+- Node.js 18+ on the VPS
+- Node.js 18+ and Python 3 on the agent machine
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed on the agent machine
 
-### Server (VPS)
+### 2. Server setup (VPS)
+
+Clone the repository and install dependencies:
 
 ```bash
+git clone https://github.com/AlehPishchykau/claude-remote.git
+cd claude-remote
 npm install
-cp .env.example .env
-# Edit .env — set PORT if needed
-npm run server
 ```
 
-Use PM2 for persistence:
+Create a `.env` file:
 
 ```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```env
+PORT=3000
+# Optional: admin key to view connected agents at /api/admin/agents
+# ADMIN_KEY=your-admin-secret
+```
+
+Start the server:
+
+```bash
+node server.js
+```
+
+#### Running with PM2 (recommended)
+
+PM2 keeps the server running after reboot:
+
+```bash
+npm install -g pm2
 pm2 start server.js --name claude-remote
 pm2 save
+pm2 startup  # follow the printed command to enable auto-start
 ```
 
-Nginx config (proxy WebSocket + HTTP):
+#### Nginx reverse proxy with SSL
+
+Install nginx and certbot:
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+```
+
+Create `/etc/nginx/sites-available/claude-remote`:
 
 ```nginx
-location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 86400;
+    }
 }
 ```
 
-### Agent (any machine)
-
-Quick install with npx (no cloning needed):
+Enable the site and get an SSL certificate:
 
 ```bash
-npx claude-remote-agent --key <YOUR_KEY> --name MyMac
+sudo ln -s /etc/nginx/sites-available/claude-remote /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d your-domain.com
 ```
 
-Or install globally:
+### 3. Agent setup (your machine)
+
+The agent runs on the machine where Claude Code is installed. It connects to the server and spawns Claude Code processes on demand.
+
+#### Quick start with npx
+
+```bash
+npx claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com --name MyMachine
+```
+
+#### Global install
 
 ```bash
 npm install -g claude-remote-agent
-claude-remote-agent --key <YOUR_KEY> --name DevContainer --server wss://your-domain.com
+claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com
 ```
 
-Or from the repo:
+The `--key` is the access key you'll use to log in from the browser. Choose any string (16+ characters).
+
+#### Agent options
+
+| Flag | Env variable | Description |
+|---|---|---|
+| `--key` | `AGENT_KEY` | Access key for browser login (required) |
+| `--server` | `SERVER_URL` | Server WebSocket URL (required) |
+| `--name` | `AGENT_NAME` | Display name (default: hostname) |
+
+#### Running the agent with PM2
 
 ```bash
-cp .env.example .env
-# Set SERVER_URL=wss://your-domain.com
-# Optionally set AGENT_KEY for a stable access key
-npm run agent
+npm install -g claude-remote-agent pm2
+pm2 start claude-remote-agent -- --key <YOUR_KEY> --server wss://your-domain.com --name MyServer
+pm2 save
 ```
 
-The agent prints an access key on startup — use it to log in from the browser.
+#### Running in a devcontainer
 
-## Environment Variables
+Add to your `.devcontainer/devcontainer.json`:
 
-| Variable | Where | Description |
-|---|---|---|
-| `PORT` | Server | HTTP port (default: 3000) |
-| `ADMIN_KEY` | Server | Optional key for `/api/admin/agents` |
-| `SERVER_URL` | Agent | WebSocket URL of the relay server |
-| `AGENT_KEY` | Agent | Fixed access key (random if unset) |
-| `AGENT_NAME` | Agent | Display name (default: `username's machine`) |
+```json
+{
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {}
+  },
+  "postCreateCommand": "npm install -g claude-remote-agent",
+  "postStartCommand": "bash .devcontainer/start-agent.sh"
+}
+```
+
+Create `.devcontainer/start-agent.sh`:
+
+```bash
+#!/bin/bash
+if ! pgrep -f "claude-remote-agent" > /dev/null 2>&1; then
+  setsid claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com --name DevContainer > /tmp/claude-remote-agent.log 2>&1 < /dev/null &
+fi
+```
+
+### 4. Connect
+
+1. Open `https://your-domain.com` in a browser
+2. Enter the access key you set with `--key`
+3. Click **+** to create a new session (specify a working directory)
+4. Start using Claude Code
 
 ## Features
 
 - **Terminal** — full xterm.js terminal with real PTY, color, resize
-- **Voice input** — dictate commands via Web Speech API (microphone button)
-- **Conversation history** — browse past Claude Code sessions from any client (VS Code, terminal, remote)
-- **Resume** — continue a previous conversation with `claude --resume`
-- **Mobile** — responsive layout, keyboard-aware viewport handling
+- **Chat mode** — structured chat with Claude Code (text + tool use)
+- **Voice input** — dictate commands via Web Speech API
+- **Conversation history** — browse and resume past Claude Code sessions
+- **Mobile** — responsive layout, works as a PWA
+- **Multi-agent** — connect multiple machines to one server
 - **Multi-session** — run multiple Claude Code sessions in parallel
-- **Auto-reconnect** — agent reconnects to server with exponential backoff
+- **Auto-reconnect** — agent reconnects with exponential backoff
 
-## Usage
+## Environment variables
 
-1. Start the server on your VPS
-2. Start the agent on your Mac
-3. Open `https://your-domain.com` in a browser
-4. Enter the access key
-5. Click **+** to create a new session (specify a working directory)
-6. Type directly in the terminal
-
-To resume a past conversation: open **History** in the sidebar, select a conversation, click **Resume**.
+| Variable | Component | Description |
+|---|---|---|
+| `PORT` | Server | HTTP port (default: 3000) |
+| `ADMIN_KEY` | Server | Optional key for `/api/admin/agents` |
+| `AGENT_KEY` | Agent | Access key for browser login |
+| `SERVER_URL` | Agent | WebSocket URL of the relay server |
+| `AGENT_NAME` | Agent | Display name (default: hostname) |
