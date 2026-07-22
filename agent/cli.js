@@ -29,12 +29,14 @@ if (opts.help) {
     --key <key>       Access key for authentication (required)
     --name <name>     Agent display name (default: hostname)
     --server <url>    Relay server URL (required)
+    --path <path>     Default working directory for new sessions (default: cwd)
     --help            Show this help
 
   Environment variables (used as fallbacks):
     AGENT_KEY         Access key
     AGENT_NAME        Agent name
     SERVER_URL        Server URL
+    DEFAULT_PATH      Default working directory
 `);
   process.exit(0);
 }
@@ -42,6 +44,7 @@ if (opts.help) {
 if (opts.key) process.env.AGENT_KEY = opts.key;
 if (opts.name) process.env.AGENT_NAME = opts.name;
 if (opts.server) process.env.SERVER_URL = opts.server;
+if (opts.path) process.env.DEFAULT_PATH = opts.path;
 
 if (!process.env.AGENT_KEY) {
   console.error('Error: --key is required. Run with --help for usage.');

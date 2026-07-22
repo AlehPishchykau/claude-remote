@@ -1,6 +1,6 @@
 {
   "name": "claude-remote-agent",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Agent for Claude Remote — connects your machine to the relay server",
   "bin": {
     "claude-remote-agent": "./cli.js"

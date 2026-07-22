@@ -17,6 +17,7 @@ async function loadSDK() {
 const SERVER_URL = process.env.SERVER_URL || '';
 const AGENT_NAME = process.env.AGENT_NAME || os.hostname();
 const AGENT_KEY = process.env.AGENT_KEY || crypto.randomBytes(24).toString('base64url');
+const DEFAULT_PATH = process.env.DEFAULT_PATH || process.cwd();
 const PTY_BRIDGE = path.join(__dirname, 'pty-bridge.py');
 
 const sessions = new Map();
@@ -53,6 +54,7 @@ function connect() {
     name: AGENT_NAME,
     hostname: os.hostname(),
     platform: `${os.platform()}/${os.arch()}`,
+    defaultPath: DEFAULT_PATH,
   });
 
   ws = new WebSocket(`${SERVER_URL}?${params}`);
