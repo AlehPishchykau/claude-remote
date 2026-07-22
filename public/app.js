@@ -1053,8 +1053,30 @@
   $('#topbar-new-btn').addEventListener('click', openNewSessionModal);
 
   function closeNewSessionModal() {
-    $('#cwd-input').blur();
-    setTimeout(() => $('#new-session-modal').classList.add('hidden'), 150);
+    const input = $('#cwd-input');
+    const modal = $('#new-session-modal');
+    const vv = window.visualViewport;
+    const keyboardOpen = vv && vv.height < window.innerHeight - 100;
+    input.blur();
+    // Keep the overlay covering the app until the keyboard has fully
+    // collapsed, so its resize animation doesn't flash behind a modal
+    // that's already gone.
+    if (keyboardOpen) {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        vv.removeEventListener('resize', onResize);
+        modal.classList.add('hidden');
+      };
+      const onResize = () => {
+        if (vv.height >= window.innerHeight - 100) finish();
+      };
+      vv.addEventListener('resize', onResize);
+      setTimeout(finish, 500);
+    } else {
+      modal.classList.add('hidden');
+    }
   }
 
   $('#cancel-modal').addEventListener('click', closeNewSessionModal);
