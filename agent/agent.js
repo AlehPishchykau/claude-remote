@@ -6,7 +6,7 @@ const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
 
-const SERVER_URL = process.env.SERVER_URL || 'wss://claude.pishchykau.eu';
+const SERVER_URL = process.env.SERVER_URL || '';
 const AGENT_NAME = process.env.AGENT_NAME || os.hostname();
 const AGENT_KEY = process.env.AGENT_KEY || crypto.randomBytes(24).toString('base64url');
 const PTY_BRIDGE = path.join(__dirname, 'pty-bridge.py');
@@ -15,6 +15,11 @@ const sessions = new Map();
 let ws = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
+
+if (!SERVER_URL) {
+  console.error('Error: --server is required. Run with --help for usage.');
+  process.exit(1);
+}
 
 console.log('');
 console.log('  ╔══════════════════════════════════════╗');

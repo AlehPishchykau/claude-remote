@@ -28,7 +28,7 @@ if (opts.help) {
   Options:
     --key <key>       Access key for authentication (required)
     --name <name>     Agent display name (default: hostname)
-    --server <url>    Relay server URL (default: wss://claude.pishchykau.eu)
+    --server <url>    Relay server URL (required)
     --help            Show this help
 
   Environment variables (used as fallbacks):
