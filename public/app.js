@@ -413,6 +413,8 @@
         appendChatMessage('tool', 'Error: ' + msg.error);
         chatBusy = false;
         updateChatInput();
+      } else if (msg.type === 'permission-request') {
+        showPermissionPrompt(msg);
       }
     });
 
@@ -638,6 +640,76 @@
       });
       container.appendChild(item);
     });
+  }
+
+  function showPermissionPrompt(msg) {
+    const container = $('#chat-messages');
+    const div = document.createElement('div');
+    div.className = 'permission-prompt';
+    div.dataset.requestId = msg.requestId;
+
+    const title = document.createElement('div');
+    title.className = 'permission-title';
+    title.textContent = msg.title || ('Claude wants to use ' + msg.toolName);
+    div.appendChild(title);
+
+    if (msg.description) {
+      const desc = document.createElement('div');
+      desc.className = 'permission-desc';
+      desc.textContent = msg.description;
+      div.appendChild(desc);
+    }
+
+    const inputStr = formatPermissionInput(msg.toolName, msg.input);
+    if (inputStr) {
+      const detail = document.createElement('pre');
+      detail.className = 'permission-detail';
+      detail.textContent = inputStr;
+      div.appendChild(detail);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'permission-actions';
+
+    const allowBtn = document.createElement('button');
+    allowBtn.className = 'permission-btn permission-allow';
+    allowBtn.textContent = 'Allow';
+    allowBtn.addEventListener('click', () => {
+      respondPermission(msg.requestId, { behavior: 'allow' });
+      div.className = 'permission-prompt resolved';
+      actions.innerHTML = '<span class="permission-resolved-label allowed">Allowed</span>';
+    });
+
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'permission-btn permission-deny';
+    denyBtn.textContent = 'Deny';
+    denyBtn.addEventListener('click', () => {
+      respondPermission(msg.requestId, { behavior: 'deny', message: 'User denied' });
+      div.className = 'permission-prompt resolved';
+      actions.innerHTML = '<span class="permission-resolved-label denied">Denied</span>';
+    });
+
+    actions.appendChild(allowBtn);
+    actions.appendChild(denyBtn);
+    div.appendChild(actions);
+
+    container.appendChild(div);
+    $('#chat-container').scrollTop = $('#chat-container').scrollHeight;
+  }
+
+  function formatPermissionInput(tool, input) {
+    if (!input) return '';
+    if (tool === 'Bash' && input.command) return input.command;
+    if (tool === 'Read' && input.file_path) return input.file_path;
+    if ((tool === 'Edit' || tool === 'Write') && input.file_path) return input.file_path;
+    const s = JSON.stringify(input, null, 2);
+    return s.length > 500 ? s.slice(0, 500) + '…' : s;
+  }
+
+  function respondPermission(requestId, result) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'permission-response', requestId, result }));
+    }
   }
 
   function sendChatMessage(text) {

@@ -641,6 +641,88 @@ button:active { opacity: 0.8; }
   min-width: 0;
 }
 
+/* ── Permission prompts ── */
+
+.permission-prompt {
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.permission-prompt.resolved {
+  border-color: var(--border);
+  opacity: 0.7;
+}
+
+.permission-title {
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 4px;
+}
+
+.permission-desc {
+  color: var(--fg-dim);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.permission-detail {
+  background: var(--bg);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-bottom: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.permission-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.permission-btn {
+  padding: 4px 14px;
+  border-radius: 4px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.permission-allow {
+  background: var(--green);
+  color: #000;
+}
+
+.permission-deny {
+  background: var(--red);
+  color: #fff;
+}
+
+.permission-btn:hover {
+  opacity: 0.85;
+}
+
+.permission-resolved-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.permission-resolved-label.allowed {
+  color: var(--green);
+}
+
+.permission-resolved-label.denied {
+  color: var(--red);
+}
+
 .chat-msg.thinking {
   color: var(--fg-dim);
   font-size: 12px;

@@ -6,6 +6,14 @@ const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
 
+let sdkModule = null;
+async function loadSDK() {
+  if (!sdkModule) {
+    sdkModule = await import('@anthropic-ai/claude-agent-sdk');
+  }
+  return sdkModule;
+}
+
 const SERVER_URL = process.env.SERVER_URL || '';
 const AGENT_NAME = process.env.AGENT_NAME || os.hostname();
 const AGENT_KEY = process.env.AGENT_KEY || crypto.randomBytes(24).toString('base64url');
@@ -89,6 +97,9 @@ function connect() {
         case 'chat-message':
           handleChatMessage(msg.sessionId, msg.text, msg.images);
           break;
+        case 'permission-response':
+          handlePermissionResponse(msg.sessionId, msg.requestId, msg.result);
+          break;
       }
     } catch (err) {
       console.error(`[${ts()}] Message error:`, err.message);
@@ -170,7 +181,11 @@ function killSession(id) {
     session.proc.kill('SIGTERM');
   }
   sessions.delete(id);
-  chatSessions.delete(id);
+  const chatSession = chatSessions.get(id);
+  if (chatSession) {
+    if (chatSession.queryHandle) chatSession.queryHandle.close();
+    chatSessions.delete(id);
+  }
   console.log(`[${ts()}] Session ${id.slice(0, 8)} killed`);
 }
 
@@ -398,13 +413,20 @@ function setModel(model) {
   return { ok: true, model };
 }
 
-// ── Chat sessions (structured JSON mode) ──
+// ── Chat sessions (Agent SDK mode) ──
 
 const chatSessions = new Map();
 
 function createChatSession(id, cwd, resumeId) {
   const workDir = resolveDir(cwd);
-  chatSessions.set(id, { id, cwd: workDir, claudeSessionId: resumeId || null, busy: false });
+  chatSessions.set(id, {
+    id,
+    cwd: workDir,
+    claudeSessionId: resumeId || null,
+    busy: false,
+    pendingPermissions: new Map(),
+    queryHandle: null,
+  });
   console.log(`[${ts()}] Chat session ${id.slice(0, 8)} created (claude: ${resumeId ? resumeId.slice(0, 8) : 'new'})`);
   send({ type: 'chat-session-ready', sessionId: id, cwd: workDir, claudeSessionId: resumeId || null });
 }
@@ -432,77 +454,112 @@ function handleChatMessage(sessionId, text, images) {
 
   let prompt = text || '';
   if (savedFiles.length > 0) {
-    const fileRefs = savedFiles.map(f => f).join(', ');
+    const fileRefs = savedFiles.join(', ');
     if (prompt) {
-      prompt = prompt + '\n\n[Attached images: ' + fileRefs + '] Use the Read tool to view them.';
+      prompt += '\n\n[Attached images: ' + fileRefs + '] Use the Read tool to view them.';
     } else {
       prompt = '[Attached images: ' + fileRefs + '] Use the Read tool to view and describe them.';
     }
   }
 
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
-  if (session.claudeSessionId) {
-    args.push('--resume', session.claudeSessionId);
-  }
+  runChatQuery(sessionId, session, prompt);
+}
 
-  const env = buildEnv(session.cwd);
-  const proc = spawn('claude', args, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env,
-    cwd: session.cwd,
-  });
+async function runChatQuery(sessionId, session, prompt) {
+  try {
+    const sdk = await loadSDK();
 
-  let buffer = '';
-  let lastTextLen = 0;
-  let sentToolIds = new Set();
+    const options = {
+      cwd: session.cwd,
+      includePartialMessages: true,
+      env: buildEnv(session.cwd),
+      canUseTool: async (toolName, input, opts) => {
+        send({
+          type: 'permission-request',
+          sessionId,
+          requestId: opts.requestId,
+          toolName,
+          input: summarizeInput(toolName, input),
+          title: opts.title || `Claude wants to use ${toolName}`,
+          description: opts.description || '',
+          displayName: opts.displayName || toolName,
+        });
 
-  proc.stdout.on('data', (chunk) => {
-    buffer += chunk.toString();
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const obj = JSON.parse(line);
-        if (obj.type === 'assistant' && obj.message?.content) {
-          if (obj.session_id && !session.claudeSessionId) {
-            session.claudeSessionId = obj.session_id;
-            console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
-          }
-          let fullText = '';
-          for (const block of obj.message.content) {
-            if (block.type === 'text') {
-              fullText += block.text;
-            } else if (block.type === 'tool_use' && !sentToolIds.has(block.id)) {
+        return new Promise((resolve) => {
+          session.pendingPermissions.set(opts.requestId, resolve);
+        });
+      },
+    };
+
+    if (session.claudeSessionId) {
+      options.resume = session.claudeSessionId;
+    }
+
+    const queryHandle = sdk.query({ prompt, options });
+    session.queryHandle = queryHandle;
+
+    const sentToolIds = new Set();
+
+    for await (const msg of queryHandle) {
+      if (msg.type === 'stream_event' && msg.event) {
+        const evt = msg.event;
+        if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+          send({ type: 'chat-text', sessionId, text: evt.delta.text, done: false });
+        }
+      } else if (msg.type === 'assistant') {
+        if (msg.session_id) {
+          session.claudeSessionId = msg.session_id;
+        }
+        if (msg.message?.content) {
+          for (const block of msg.message.content) {
+            if (block.type === 'tool_use' && !sentToolIds.has(block.id)) {
               sentToolIds.add(block.id);
               send({ type: 'chat-tool', sessionId, tool: block.name, input: block.input });
             }
           }
-          if (fullText.length > lastTextLen) {
-            const delta = fullText.slice(lastTextLen);
-            lastTextLen = fullText.length;
-            send({ type: 'chat-text', sessionId, text: delta, done: false });
-          }
-        } else if (obj.type === 'result') {
-          if (obj.session_id && !session.claudeSessionId) {
-            session.claudeSessionId = obj.session_id;
-            console.log(`[${ts()}] Chat ${sessionId.slice(0, 8)} got claude session: ${obj.session_id.slice(0, 8)}`);
-          }
-          send({ type: 'chat-text', sessionId, text: '', done: true });
         }
-      } catch {}
+      } else if (msg.type === 'result') {
+        if (msg.session_id) {
+          session.claudeSessionId = msg.session_id;
+        }
+        send({ type: 'chat-text', sessionId, text: '', done: true });
+      }
     }
-  });
-
-  proc.stderr.on('data', () => {});
-
-  proc.on('exit', (code) => {
+  } catch (err) {
+    console.error(`[${ts()}] Chat ${sessionId.slice(0, 8)} error:`, err.message);
+    send({ type: 'chat-error', sessionId, error: err.message });
+  } finally {
     session.busy = false;
-    send({ type: 'chat-done', sessionId, exitCode: code });
-  });
+    session.queryHandle = null;
+    session.pendingPermissions.clear();
+    send({ type: 'chat-done', sessionId, exitCode: 0 });
+  }
+}
 
-  proc.stdin.write(prompt);
-  proc.stdin.end();
+function summarizeInput(toolName, input) {
+  if (!input) return {};
+  if (toolName === 'Bash') return { command: input.command || '' };
+  if (toolName === 'Read') return { file_path: input.file_path || '' };
+  if (toolName === 'Edit' || toolName === 'Write') return { file_path: input.file_path || '' };
+  const str = JSON.stringify(input);
+  if (str.length > 500) return { _summary: str.slice(0, 500) + '…' };
+  return input;
+}
+
+function handlePermissionResponse(sessionId, requestId, result) {
+  const session = chatSessions.get(sessionId);
+  if (!session) return;
+
+  const resolve = session.pendingPermissions.get(requestId);
+  if (!resolve) return;
+
+  session.pendingPermissions.delete(requestId);
+
+  if (result.behavior === 'allow') {
+    resolve({ behavior: 'allow' });
+  } else {
+    resolve({ behavior: 'deny', message: result.message || 'User denied' });
+  }
 }
 
 process.on('SIGINT', () => {

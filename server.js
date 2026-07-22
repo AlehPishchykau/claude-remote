@@ -360,7 +360,7 @@ function handleAgentConnection(ws, url) {
       } else if (msg.type === 'exit') {
         session.alive = false;
         broadcastToSession(msg.sessionId, { type: 'exit', exitCode: msg.exitCode });
-      } else if (msg.type === 'chat-session-ready' || msg.type === 'chat-text' || msg.type === 'chat-tool' || msg.type === 'chat-thinking' || msg.type === 'chat-done' || msg.type === 'chat-error') {
+      } else if (msg.type === 'chat-session-ready' || msg.type === 'chat-text' || msg.type === 'chat-tool' || msg.type === 'chat-thinking' || msg.type === 'chat-done' || msg.type === 'chat-error' || msg.type === 'permission-request') {
         if (msg.type === 'chat-session-ready' && msg.claudeSessionId) {
           session.claudeSessionId = msg.claudeSessionId;
         }
