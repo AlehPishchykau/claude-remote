@@ -854,7 +854,10 @@ button:active { opacity: 0.8; }
 
 .modal {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--vh, 100dvh);
   background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
@@ -908,6 +911,73 @@ button:active { opacity: 0.8; }
 }
 
 
+/* ── Recent paths ── */
+
+#recent-paths {
+  margin-bottom: 12px;
+}
+
+#recent-paths:empty {
+  display: none;
+}
+
+.recent-paths-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+}
+
+.recent-path-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.recent-path-item:hover {
+  border-color: var(--accent);
+}
+
+.recent-path-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-path-remove {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  border-radius: 4px;
+  display: none;
+}
+
+.recent-path-item:hover .recent-path-remove {
+  display: block;
+}
+
+.recent-path-remove:hover {
+  color: var(--red);
+}
+
 .modal-actions {
   display: flex;
   gap: 8px;
@@ -950,7 +1020,6 @@ button:active { opacity: 0.8; }
 }
 
 .history-item-delete {
-  display: none;
   background: none;
   border: none;
   color: var(--fg-dim);
@@ -960,12 +1029,13 @@ button:active { opacity: 0.8; }
   line-height: 1;
   flex-shrink: 0;
   border-radius: 4px;
+  opacity: 0;
 }
 
 .history-item-delete:hover { color: var(--red); }
 
 .history-item:hover { background: var(--bg-input); }
-.history-item:hover .history-item-delete { display: block; }
+.history-item:hover .history-item-delete { opacity: 1; }
 
 .history-item .history-meta {
   font-size: 10px;
@@ -1092,7 +1162,7 @@ button:active { opacity: 0.8; }
   #terminal-container { padding: 4px; }
   .auth-card { padding: 32px 20px; }
   #sidebar { width: 100%; }
-  .history-item-delete { display: block; }
+  .history-item-delete { opacity: 1; }
   .modal { padding: 12px; }
   .modal-content { width: 100%; }
 }

@@ -82,6 +82,7 @@ app.post('/api/auth', (req, res) => {
       name: agent.name,
       hostname: agent.hostname,
       platform: agent.platform,
+      defaultPath: agent.defaultPath,
       connectedAt: agent.connectedAt,
     },
   });
@@ -94,6 +95,7 @@ app.get('/api/agent', authMiddleware, (req, res) => {
     name: a.name,
     hostname: a.hostname,
     platform: a.platform,
+    defaultPath: a.defaultPath,
     online: a.ws && a.ws.readyState === 1,
     connectedAt: a.connectedAt,
   });
@@ -305,6 +307,7 @@ function handleAgentConnection(ws, url) {
   const name = url.searchParams.get('name') || 'Unnamed';
   const hostname = url.searchParams.get('hostname') || 'unknown';
   const platform = url.searchParams.get('platform') || 'unknown';
+  const defaultPath = url.searchParams.get('defaultPath') || '';
 
   if (!accessKey || accessKey.length < 16) {
     ws.close(4001, 'Invalid access key');
@@ -321,6 +324,7 @@ function handleAgentConnection(ws, url) {
     name,
     hostname,
     platform,
+    defaultPath,
     accessKey,
     ws,
     connectedAt: new Date().toISOString(),

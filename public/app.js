@@ -972,10 +972,55 @@
     $('#auth-error').classList.add('hidden');
   });
 
+  function getRecentPaths() {
+    try { return JSON.parse(localStorage.getItem('cr_recent_paths') || '[]'); } catch { return []; }
+  }
+
+  function saveRecentPath(p) {
+    if (!p) return;
+    const paths = getRecentPaths().filter(x => x !== p);
+    paths.unshift(p);
+    if (paths.length > 5) paths.length = 5;
+    localStorage.setItem('cr_recent_paths', JSON.stringify(paths));
+  }
+
+  function removeRecentPath(p) {
+    const paths = getRecentPaths().filter(x => x !== p);
+    localStorage.setItem('cr_recent_paths', JSON.stringify(paths));
+    renderRecentPaths();
+  }
+
+  function renderRecentPaths() {
+    const container = $('#recent-paths');
+    const paths = getRecentPaths();
+    if (paths.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = '<div class="recent-paths-label">Recent</div>' +
+      paths.map(p =>
+        '<button class="recent-path-item" data-path="' + escapeHtml(p) + '">' +
+          '<span class="recent-path-text">' + escapeHtml(shortenPath(p)) + '</span>' +
+          '<span class="recent-path-remove" title="Remove">&times;</span>' +
+        '</button>'
+      ).join('');
+    container.querySelectorAll('.recent-path-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.recent-path-remove')) {
+          e.stopPropagation();
+          removeRecentPath(el.dataset.path);
+          return;
+        }
+        $('#cwd-input').value = el.dataset.path;
+        $('#create-session-btn').click();
+      });
+    });
+  }
+
   function openNewSessionModal() {
     closeSidebar();
+    const input = $('#cwd-input');
+    input.value = agentInfo?.defaultPath || '';
+    renderRecentPaths();
     $('#new-session-modal').classList.remove('hidden');
-    setTimeout(() => $('#cwd-input').focus(), 100);
+    setTimeout(() => { input.focus(); input.select(); }, 100);
   }
 
   $('#new-session-btn').addEventListener('click', openNewSessionModal);
@@ -988,6 +1033,7 @@
 
   $('#create-session-btn').addEventListener('click', async () => {
     const cwd = $('#cwd-input').value.trim() || undefined;
+    if (cwd) saveRecentPath(cwd);
     $('#new-session-modal').classList.add('hidden');
     $('#cwd-input').value = '';
 
