@@ -1178,6 +1178,27 @@ button:active { opacity: 0.8; }
   background: rgba(124, 155, 245, 0.1);
 }
 
+/* ── Landscape warning ── */
+
+#landscape-warning {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 14px;
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  #landscape-warning { display: flex; }
+}
+
 /* ── Mobile ── */
 
 @media (max-width: 768px) {

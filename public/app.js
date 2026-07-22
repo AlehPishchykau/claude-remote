@@ -1272,6 +1272,8 @@
 
   initVoice();
   renderSavedKeys();
+  try { screen.orientation.lock('portrait').catch(() => {}); } catch {}
+
 
   const splashMin = new Promise(r => setTimeout(r, 1000));
 
