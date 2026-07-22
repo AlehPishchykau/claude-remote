@@ -967,11 +967,11 @@ button:active { opacity: 0.8; }
   line-height: 1;
   flex-shrink: 0;
   border-radius: 4px;
-  display: none;
+  opacity: 0;
 }
 
 .recent-path-item:hover .recent-path-remove {
-  display: block;
+  opacity: 1;
 }
 
 .recent-path-remove:hover {
