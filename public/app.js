@@ -1273,16 +1273,18 @@
   initVoice();
   renderSavedKeys();
 
+  const splashMin = new Promise(r => setTimeout(r, 1000));
+
   if (accessKey) {
-    tryLogin(accessKey)
-      .then((result) => showApp(result.agent))
+    Promise.all([tryLogin(accessKey), splashMin])
+      .then(([result]) => showApp(result.agent))
       .catch(() => {
         localStorage.removeItem('cr_key');
         accessKey = null;
         showAuth();
       });
   } else {
-    showAuth();
+    splashMin.then(showAuth);
   }
 
   setInterval(() => {
