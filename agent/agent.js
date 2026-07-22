@@ -440,7 +440,7 @@ function handleChatMessage(sessionId, text, images) {
     }
   }
 
-  const args = ['-p', '--output-format', 'stream-json', '--verbose'];
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
   if (session.claudeSessionId) {
     args.push('--resume', session.claudeSessionId);
   }
