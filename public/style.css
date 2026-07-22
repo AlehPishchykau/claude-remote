@@ -266,7 +266,6 @@ button:active { opacity: 0.8; }
 }
 
 .agent-status #agent-name {
-  flex: 1;
   min-width: 0;
   font-weight: 600;
   white-space: nowrap;
