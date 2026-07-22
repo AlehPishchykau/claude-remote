@@ -51,8 +51,19 @@
     return data;
   }
 
+  function hideSplash() {
+    const splash = $('#splash-screen');
+    if (splash) splash.classList.add('hidden');
+  }
+
+  function showAuth() {
+    hideSplash();
+    $('#auth-screen').classList.remove('hidden');
+  }
+
   function showApp(agent) {
     agentInfo = agent;
+    hideSplash();
     $('#auth-screen').classList.add('hidden');
     $('#app').classList.remove('hidden');
     updateAgentCard();
@@ -1027,13 +1038,17 @@
   $('#empty-new-btn').addEventListener('click', openNewSessionModal);
   $('#topbar-new-btn').addEventListener('click', openNewSessionModal);
 
-  $('#cancel-modal').addEventListener('click', () => {
-    $('#new-session-modal').classList.add('hidden');
-  });
+  function closeNewSessionModal() {
+    $('#cwd-input').blur();
+    setTimeout(() => $('#new-session-modal').classList.add('hidden'), 150);
+  }
+
+  $('#cancel-modal').addEventListener('click', closeNewSessionModal);
 
   $('#create-session-btn').addEventListener('click', async () => {
     const cwd = $('#cwd-input').value.trim() || undefined;
     if (cwd) saveRecentPath(cwd);
+    $('#cwd-input').blur();
     $('#new-session-modal').classList.add('hidden');
     $('#cwd-input').value = '';
 
@@ -1264,7 +1279,10 @@
       .catch(() => {
         localStorage.removeItem('cr_key');
         accessKey = null;
+        showAuth();
       });
+  } else {
+    showAuth();
   }
 
   setInterval(() => {

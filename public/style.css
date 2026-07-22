@@ -30,6 +30,15 @@ body {
 
 .hidden { display: none !important; }
 
+/* ── Splash ── */
+
+#splash-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
 /* ── Auth ── */
 
 #auth-screen {
