@@ -11,7 +11,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
   <div id="splash-screen">
@@ -40,14 +40,12 @@
     <div id="sidebar-overlay" class="hidden"></div>
     <aside id="sidebar">
       <div class="sidebar-header">
-        <div class="logo-wrapper"><div class="logo-small"></div></div>
-        <h2>Claude Remote</h2>
+        <div class="agent-status">
+          <span id="agent-dot" class="dot online"></span>
+          <span id="agent-name">Agent</span>
+          <span id="agent-meta"></span>
+        </div>
         <button id="sidebar-close-btn" class="btn-icon" title="Close">✕</button>
-      </div>
-      <div class="agent-status">
-        <span id="agent-dot" class="dot online"></span>
-        <span id="agent-name">Agent</span>
-        <span id="agent-meta"></span>
       </div>
       <div class="section-header">
         <span>Sessions</span>
