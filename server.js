@@ -331,6 +331,8 @@ function handleAgentConnection(ws, url) {
   };
 
   agents.set(accessKey, agent);
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   console.log(`[agent] ${name} (${hostname}) connected`);
 
   ws.send(JSON.stringify({ type: 'registered', id: agent.id }));
@@ -367,6 +369,13 @@ function handleAgentConnection(ws, url) {
       } else if (msg.type === 'chat-session-ready' || msg.type === 'chat-text' || msg.type === 'chat-tool' || msg.type === 'chat-thinking' || msg.type === 'chat-done' || msg.type === 'chat-error' || msg.type === 'permission-request') {
         if (msg.type === 'chat-session-ready' && msg.claudeSessionId) {
           session.claudeSessionId = msg.claudeSessionId;
+        }
+        if (msg.type === 'chat-done' || msg.type === 'chat-error') {
+          session.chatBusy = false;
+          session.pendingPermission = null;
+        }
+        if (msg.type === 'permission-request') {
+          session.pendingPermission = msg;
         }
         if (msg.type === 'chat-text' || msg.type === 'chat-tool') {
           if (!session.chatHistory) session.chatHistory = [];
@@ -410,9 +419,21 @@ function handleBrowserConnection(ws, url) {
   }
 
   session.subscribers.add(ws);
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
-  if (session.mode === 'chat' && session.chatHistory && session.chatHistory.length > 0) {
-    ws.send(JSON.stringify({ type: 'chat-history', messages: session.chatHistory }));
+  if (session.mode === 'chat') {
+    // Always send a snapshot so a reconnecting client can rebuild its view and
+    // restore the busy/permission state it may have missed while backgrounded.
+    ws.send(JSON.stringify({
+      type: 'chat-history',
+      messages: session.chatHistory || [],
+      busy: !!session.chatBusy,
+      alive: session.alive,
+    }));
+    if (session.pendingPermission) {
+      ws.send(JSON.stringify(session.pendingPermission));
+    }
   } else {
     const recentHistory = session.history.slice(-2000).join('');
     if (recentHistory) {
@@ -423,11 +444,24 @@ function handleBrowserConnection(ws, url) {
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw);
+
+      // Liveness probe from the client — answer even for dead sessions so the
+      // client can tell "connection is gone" apart from "session has exited".
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+
       if (!session.alive) return;
 
       if (msg.type === 'chat-message' && session.mode === 'chat') {
         if (!session.chatHistory) session.chatHistory = [];
         session.chatHistory.push({ type: 'chat-user', text: msg.text });
+        session.chatBusy = true;
+      }
+
+      if (msg.type === 'permission-response') {
+        session.pendingPermission = null;
       }
 
       if (agent.ws && agent.ws.readyState === 1) {
@@ -442,6 +476,21 @@ function handleBrowserConnection(ws, url) {
 
   ws.on('error', () => {});
 }
+
+// Drop half-open sockets (phone suspended / network switched) instead of
+// letting them linger as subscribers that silently swallow broadcasts.
+const HEARTBEAT_MS = 30000;
+
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, HEARTBEAT_MS);
 
 const SESSION_TTL = 30 * 60 * 1000;
 

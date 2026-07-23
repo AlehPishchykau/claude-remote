@@ -22,6 +22,10 @@ claude-remote-agent --key <YOUR_KEY> --server wss://your-domain.com --name MyMac
 | `--key` | `AGENT_KEY` | Access key for browser login (required) |
 | `--server` | `SERVER_URL` | Relay server WebSocket URL (required) |
 | `--name` | `AGENT_NAME` | Agent display name (default: hostname) |
+| `--permission-mode` | `PERMISSION_MODE` | `default` (confirm each tool call, the default) or `bypassPermissions` (never ask) |
+
+> `PERMISSION_MODE=bypassPermissions` lets Claude run every tool unattended on
+> the machine hosting the agent. Only set it where that is acceptable.
 
 ## Requirements
 

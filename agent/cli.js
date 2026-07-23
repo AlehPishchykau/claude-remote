@@ -30,6 +30,9 @@ if (opts.help) {
     --name <name>     Agent display name (default: hostname)
     --server <url>    Relay server URL (required)
     --path <path>     Default working directory for new sessions (default: cwd)
+    --permission-mode <mode>
+                      'default' to confirm each tool call (default),
+                      'bypassPermissions' to let Claude run tools unattended
     --help            Show this help
 
   Environment variables (used as fallbacks):
@@ -37,6 +40,7 @@ if (opts.help) {
     AGENT_NAME        Agent name
     SERVER_URL        Server URL
     DEFAULT_PATH      Default working directory
+    PERMISSION_MODE   Permission mode
 `);
   process.exit(0);
 }
@@ -45,6 +49,13 @@ if (opts.key) process.env.AGENT_KEY = opts.key;
 if (opts.name) process.env.AGENT_NAME = opts.name;
 if (opts.server) process.env.SERVER_URL = opts.server;
 if (opts.path) process.env.DEFAULT_PATH = opts.path;
+if (opts['permission-mode']) process.env.PERMISSION_MODE = opts['permission-mode'];
+
+const PERMISSION_MODES = ['default', 'bypassPermissions', 'acceptEdits', 'plan'];
+if (process.env.PERMISSION_MODE && !PERMISSION_MODES.includes(process.env.PERMISSION_MODE)) {
+  console.error(`Error: unknown --permission-mode '${process.env.PERMISSION_MODE}'. Expected one of: ${PERMISSION_MODES.join(', ')}`);
+  process.exit(1);
+}
 
 if (!process.env.AGENT_KEY) {
   console.error('Error: --key is required. Run with --help for usage.');

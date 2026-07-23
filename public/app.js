@@ -15,6 +15,11 @@
   let voiceLangIndex = parseInt(localStorage.getItem('cr_voice_lang') || '0', 10) % voiceLangs.length;
   let chatBusy = false;
   let pendingImages = [];
+  let currentSessionInfo = null;
+  let reconnectTimer = null;
+  let reconnectAttempt = 0;
+  let closingIntentionally = false;
+  let pongTimer = null;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -76,8 +81,11 @@
     accessKey = null;
     agentInfo = null;
     currentSessionId = null;
+    currentSessionInfo = null;
     sessionMode = null;
-    if (ws) { try { ws.close(); } catch {} ws = null; }
+    closingIntentionally = true;
+    cancelReconnect();
+    closeSocket();
     if (terminal) { try { terminal.dispose(); } catch {} terminal = null; }
     stopRecording();
     $('#terminal-container').classList.add('hidden');
@@ -312,37 +320,8 @@
       }, { passive: false });
     }
 
-    return { cols: terminal.cols, rows: terminal.rows };
-  }
-
-  function connectWebSocket(sessionId) {
-    if (ws) { ws.close(); ws = null; }
-
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '?token=' + encodeURIComponent(accessKey) + '&session=' + sessionId);
-
-    ws.addEventListener('open', () => {
-      fitAddon.fit();
-      // Send correct dimensions immediately
-      if (terminal) {
-        ws.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
-      }
-    });
-
-    ws.addEventListener('message', (evt) => {
-      const msg = JSON.parse(evt.data);
-      if (msg.type === 'output' || msg.type === 'history') {
-        terminal.write(msg.data);
-      } else if (msg.type === 'exit') {
-        terminal.write('\r\n\x1b[31m[Session exited]\x1b[0m\r\n');
-        loadSessions();
-      }
-    });
-
-    ws.addEventListener('close', () => {
-      terminal.write('\r\n\x1b[33m[Disconnected]\x1b[0m\r\n');
-    });
-
+    // Registered once per terminal instance — re-registering on every reconnect
+    // would send each keystroke multiple times.
     terminal.onData((data) => {
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data }));
     });
@@ -350,10 +329,150 @@
     terminal.onResize(({ cols, rows }) => {
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     });
+
+    return { cols: terminal.cols, rows: terminal.rows };
   }
 
+  function connectWebSocket(sessionId, isReconnect) {
+    closeSocket();
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '?token=' + encodeURIComponent(accessKey) + '&session=' + sessionId);
+    const thisWs = ws;
+
+    ws.addEventListener('open', () => {
+      reconnectAttempt = 0;
+      // The server replays recent scrollback on every connect, so wipe what is
+      // already on screen to avoid showing it twice.
+      if (isReconnect && terminal) terminal.reset();
+      fitAddon.fit();
+      // Send correct dimensions immediately
+      if (terminal) {
+        thisWs.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
+      }
+    });
+
+    ws.addEventListener('message', (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'pong') {
+        clearPongTimer();
+      } else if (msg.type === 'output' || msg.type === 'history') {
+        terminal.write(msg.data);
+      } else if (msg.type === 'exit') {
+        terminal.write('\r\n\x1b[31m[Session exited]\x1b[0m\r\n');
+        loadSessions();
+      }
+    });
+
+    ws.addEventListener('close', (evt) => {
+      if (thisWs !== ws) return;
+      clearPongTimer();
+      if (closingIntentionally || isFatalClose(evt)) return;
+      terminal.write('\r\n\x1b[33m[Reconnecting…]\x1b[0m\r\n');
+      scheduleReconnect();
+    });
+
+    ws.addEventListener('error', () => {});
+  }
+
+  // ── Connection recovery ──
+  //
+  // Mobile browsers freeze backgrounded pages and drop the socket, often
+  // without ever firing 'close' — the socket stays readyState===OPEN but is a
+  // zombie. Without this, every send after minimising is silently discarded.
+
+  function closeSocket() {
+    clearPongTimer();
+    if (ws) {
+      const old = ws;
+      ws = null;
+      try { old.close(); } catch {}
+    }
+  }
+
+  function clearPongTimer() {
+    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
+  }
+
+  function isFatalClose(evt) {
+    // 4001 invalid key, 4004 session gone — retrying cannot help.
+    return evt && (evt.code === 4001 || evt.code === 4004);
+  }
+
+  function cancelReconnect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempt = 0;
+  }
+
+  function scheduleReconnect() {
+    if (closingIntentionally || !currentSessionId || !accessKey) return;
+    if (reconnectTimer) return;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 15000);
+    reconnectAttempt++;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      reconnectNow();
+    }, delay);
+  }
+
+  function reconnectNow() {
+    if (!currentSessionId || !accessKey) return;
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    if (sessionMode === 'chat') {
+      rebuildChatSession();
+    } else if (terminal) {
+      connectWebSocket(currentSessionId, true);
+    }
+  }
+
+  // Re-render the chat pane from the server snapshot: the transcript may have
+  // grown while we were away, and local state (busy flag, permission prompt)
+  // can be stale.
+  async function rebuildChatSession() {
+    $('#chat-messages').innerHTML = '';
+    await renderConversationFile(currentSessionInfo);
+    connectChatWebSocket(currentSessionId);
+  }
+
+  function checkConnection() {
+    if (!currentSessionId || !accessKey || closingIntentionally) return;
+    if (!ws || ws.readyState === 2 || ws.readyState === 3) {
+      cancelReconnect();
+      reconnectNow();
+      return;
+    }
+    if (ws.readyState !== 1 || pongTimer) return;
+    // Probe: a zombie socket accepts the write but no pong ever comes back.
+    try {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    } catch {
+      cancelReconnect();
+      reconnectNow();
+      return;
+    }
+    pongTimer = setTimeout(() => {
+      pongTimer = null;
+      closeSocket();
+      cancelReconnect();
+      reconnectNow();
+    }, 4000);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkConnection();
+  });
+  window.addEventListener('focus', checkConnection);
+  window.addEventListener('online', () => {
+    cancelReconnect();
+    checkConnection();
+  });
+  window.addEventListener('pageshow', checkConnection);
+
   function openSession(id, info) {
+    cancelReconnect();
+    closingIntentionally = false;
     currentSessionId = id;
+    currentSessionInfo = info;
     sessionMode = 'terminal';
 
     $('#no-session').classList.add('hidden');
@@ -369,8 +488,26 @@
     loadSessions();
   }
 
+  async function renderConversationFile(info) {
+    if (!info || !info.conversationFile) return;
+    try {
+      const data = await api('GET', '/conversations/' + encodeURIComponent(info.conversationFile));
+      for (const msg of data.messages) {
+        if (msg.role === 'tool') {
+          appendToolMessage(msg);
+        } else {
+          const text = (msg.text || '').trim();
+          if (text) appendChatMessage(msg.role, text, true);
+        }
+      }
+    } catch {}
+  }
+
   async function openChatSession(id, info) {
+    cancelReconnect();
+    closingIntentionally = false;
     currentSessionId = id;
+    currentSessionInfo = info;
     sessionMode = 'chat';
 
     $('#no-session').classList.add('hidden');
@@ -382,19 +519,7 @@
     const shortCwd = shortenPath(info.cwd);
     showSessionTopbar(shortCwd);
 
-    if (info.conversationFile) {
-      try {
-        const data = await api('GET', '/conversations/' + encodeURIComponent(info.conversationFile));
-        for (const msg of data.messages) {
-          if (msg.role === 'tool') {
-            appendToolMessage(msg);
-          } else {
-            const text = (msg.text || '').trim();
-            if (text) appendChatMessage(msg.role, text, true);
-          }
-        }
-      } catch {}
-    }
+    await renderConversationFile(info);
 
     connectChatWebSocket(id);
     loadSessions();
@@ -408,14 +533,25 @@
   // ── Chat mode ──
 
   function connectChatWebSocket(sessionId) {
-    if (ws) { ws.close(); ws = null; }
+    closeSocket();
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(proto + '//' + location.host + '?token=' + encodeURIComponent(accessKey) + '&session=' + sessionId);
+    const thisWs = ws;
+
+    ws.addEventListener('open', () => {
+      reconnectAttempt = 0;
+    });
 
     ws.addEventListener('message', (evt) => {
       const msg = JSON.parse(evt.data);
-      if (msg.type === 'chat-history') {
+      if (msg.type === 'pong') {
+        clearPongTimer();
+      } else if (msg.type === 'chat-history') {
+        // Authoritative snapshot — adopt the server's busy state, otherwise the
+        // input can stay disabled forever after missing a 'chat-done'.
+        chatBusy = !!msg.busy;
+        updateChatInput();
         for (const m of msg.messages) {
           if (m.type === 'chat-user') {
             appendChatMessage('user', m.text, true);
@@ -443,10 +579,16 @@
       }
     });
 
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (evt) => {
+      if (thisWs !== ws) return;
+      clearPongTimer();
       chatBusy = false;
       updateChatInput();
+      if (closingIntentionally || isFatalClose(evt)) return;
+      scheduleReconnect();
     });
+
+    ws.addEventListener('error', () => {});
   }
 
   function renderMd(text) {
@@ -673,6 +815,15 @@
     div.className = 'permission-prompt';
     div.dataset.requestId = msg.requestId;
 
+    // AskUserQuestion is answered through this prompt, not merely approved —
+    // render its choices instead of a meaningless Allow/Deny pair.
+    if (msg.toolName === 'AskUserQuestion' && msg.input && Array.isArray(msg.input.questions) && msg.input.questions.length > 0) {
+      renderQuestionPrompt(div, msg);
+      container.appendChild(div);
+      $('#chat-container').scrollTop = $('#chat-container').scrollHeight;
+      return;
+    }
+
     const title = document.createElement('div');
     title.className = 'permission-title';
     title.textContent = msg.title || ('Claude wants to use ' + msg.toolName);
@@ -722,6 +873,156 @@
     $('#chat-container').scrollTop = $('#chat-container').scrollHeight;
   }
 
+  function renderQuestionPrompt(div, msg) {
+    const questions = msg.input.questions;
+    const answers = {};
+    div.classList.add('question-prompt');
+
+    const title = document.createElement('div');
+    title.className = 'permission-title';
+    title.textContent = questions.length > 1 ? 'Claude has some questions' : 'Claude has a question';
+    div.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'permission-actions';
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'permission-btn permission-allow';
+    submitBtn.textContent = 'Send';
+
+    // One single-choice question is the common case — a tap should answer it
+    // outright rather than making the user reach for a second button.
+    const autoSubmit = questions.length === 1 && !questions[0].multiSelect;
+
+    function refreshSubmit() {
+      submitBtn.disabled = questions.some((q) => !answers[q.question]);
+    }
+
+    function finish() {
+      if (questions.some((q) => !answers[q.question])) return;
+      respondPermission(msg.requestId, {
+        behavior: 'allow',
+        updatedInput: Object.assign({}, msg.input, { answers }),
+      });
+      div.className = 'permission-prompt question-prompt resolved';
+      const summary = questions.map((q) => answers[q.question]).join(' · ');
+      actions.innerHTML = '';
+      const label = document.createElement('span');
+      label.className = 'permission-resolved-label allowed';
+      label.textContent = summary;
+      actions.appendChild(label);
+      for (const b of div.querySelectorAll('.question-option, .question-other')) b.disabled = true;
+    }
+
+    for (const q of questions) {
+      const block = document.createElement('div');
+      block.className = 'question-block';
+
+      if (q.header) {
+        const chip = document.createElement('div');
+        chip.className = 'question-header';
+        chip.textContent = q.header;
+        block.appendChild(chip);
+      }
+
+      const qText = document.createElement('div');
+      qText.className = 'question-text';
+      qText.textContent = q.question;
+      block.appendChild(qText);
+
+      const optsWrap = document.createElement('div');
+      optsWrap.className = 'question-options';
+      const selected = new Set();
+      const multi = !!q.multiSelect;
+
+      const otherInput = document.createElement('input');
+
+      for (const opt of (q.options || [])) {
+        const btn = document.createElement('button');
+        btn.className = 'question-option';
+
+        const lbl = document.createElement('span');
+        lbl.className = 'question-option-label';
+        lbl.textContent = opt.label;
+        btn.appendChild(lbl);
+
+        if (opt.description) {
+          const desc = document.createElement('span');
+          desc.className = 'question-option-desc';
+          desc.textContent = opt.description;
+          btn.appendChild(desc);
+        }
+
+        btn.addEventListener('click', () => {
+          if (multi) {
+            if (selected.has(opt.label)) {
+              selected.delete(opt.label);
+              btn.classList.remove('selected');
+            } else {
+              selected.add(opt.label);
+              btn.classList.add('selected');
+            }
+            if (selected.size) answers[q.question] = [...selected].join(', ');
+            else delete answers[q.question];
+            refreshSubmit();
+          } else {
+            for (const sib of optsWrap.querySelectorAll('.question-option')) sib.classList.remove('selected');
+            btn.classList.add('selected');
+            otherInput.value = '';
+            answers[q.question] = opt.label;
+            refreshSubmit();
+            if (autoSubmit) finish();
+          }
+        });
+
+        optsWrap.appendChild(btn);
+      }
+
+      block.appendChild(optsWrap);
+
+      // The tool contract always allows a free-form answer alongside the options.
+      otherInput.type = 'text';
+      otherInput.className = 'question-other';
+      otherInput.placeholder = 'Other…';
+      otherInput.addEventListener('input', () => {
+        const val = otherInput.value.trim();
+        if (val) {
+          for (const sib of optsWrap.querySelectorAll('.question-option')) sib.classList.remove('selected');
+          selected.clear();
+          answers[q.question] = val;
+        } else {
+          delete answers[q.question];
+        }
+        refreshSubmit();
+      });
+      otherInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish();
+        }
+      });
+      block.appendChild(otherInput);
+
+      div.appendChild(block);
+    }
+
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'permission-btn permission-deny';
+    skipBtn.textContent = 'Skip';
+    skipBtn.addEventListener('click', () => {
+      respondPermission(msg.requestId, { behavior: 'deny', message: 'User skipped the question' });
+      div.className = 'permission-prompt question-prompt resolved';
+      actions.innerHTML = '<span class="permission-resolved-label denied">Skipped</span>';
+      for (const b of div.querySelectorAll('.question-option, .question-other')) b.disabled = true;
+    });
+
+    submitBtn.addEventListener('click', finish);
+    refreshSubmit();
+
+    if (!autoSubmit) actions.appendChild(submitBtn);
+    actions.appendChild(skipBtn);
+    div.appendChild(actions);
+  }
+
   function formatPermissionInput(tool, input) {
     if (!input) return '';
     if (tool === 'Bash' && input.command) return input.command;
@@ -738,7 +1039,14 @@
   }
 
   function sendChatMessage(text) {
-    if ((!text && pendingImages.length === 0) || !ws || ws.readyState !== 1 || chatBusy) return;
+    if ((!text && pendingImages.length === 0) || chatBusy) return false;
+    if (!ws || ws.readyState !== 1) {
+      // Don't drop the message silently — recover the socket and let the user retry.
+      appendChatMessage('tool', 'Connection lost — reconnecting, please resend in a moment.');
+      cancelReconnect();
+      reconnectNow();
+      return false;
+    }
     chatBusy = true;
     updateChatInput();
 
@@ -756,6 +1064,7 @@
       msg.images = images.map(i => ({ base64: i.base64, mimeType: i.mimeType, name: i.name }));
     }
     ws.send(JSON.stringify(msg));
+    return true;
   }
 
   function updateChatInput() {
@@ -1096,7 +1405,10 @@
 
     try {
       const session = await api('POST', '/chat-sessions', { cwd });
+      cancelReconnect();
+      closingIntentionally = false;
       currentSessionId = session.id;
+      currentSessionInfo = { cwd: session.cwd, conversationFile: null };
       showSessionTopbar(shortenPath(session.cwd));
       connectChatWebSocket(session.id);
       loadSessions();
@@ -1119,8 +1431,10 @@
     if (!confirm('Kill this session?')) return;
     try { await api('DELETE', '/sessions/' + currentSessionId); } catch {}
     currentSessionId = null;
+    currentSessionInfo = null;
     sessionMode = null;
-    if (ws) ws.close();
+    cancelReconnect();
+    closeSocket();
     if (terminal) terminal.dispose();
     terminal = null;
     $('#terminal-container').classList.add('hidden');
@@ -1169,7 +1483,10 @@
 
     try {
       const session = await api('POST', '/chat-sessions', { cwd, resumeId, conversationFile: file });
+      cancelReconnect();
+      closingIntentionally = false;
       currentSessionId = session.id;
+      currentSessionInfo = { cwd, conversationFile: file };
       showSessionTopbar(shortenPath(cwd));
       connectChatWebSocket(session.id);
       loadSessions();
@@ -1189,8 +1506,8 @@
     const input = $('#chat-input');
     const text = input.value.trim();
     if (text || pendingImages.length > 0) {
-      sendChatMessage(text);
-      input.value = '';
+      // Keep the text in the box if the send didn't go through.
+      if (sendChatMessage(text)) input.value = '';
     }
   });
   $('#chat-input').addEventListener('keydown', (e) => {

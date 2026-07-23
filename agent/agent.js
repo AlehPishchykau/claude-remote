@@ -474,6 +474,9 @@ async function runChatQuery(sessionId, session, prompt) {
     const options = {
       cwd: session.cwd,
       includePartialMessages: true,
+      // Without this the SDK sends --permission-mode default, which overrides
+      // defaultMode in settings.json and prompts for every tool call.
+      permissionMode: process.env.PERMISSION_MODE || 'default',
       env: buildEnv(session.cwd),
       canUseTool: async (toolName, input, opts) => {
         send({
@@ -543,6 +546,10 @@ function summarizeInput(toolName, input) {
   if (toolName === 'Bash') return { command: input.command || '' };
   if (toolName === 'Read') return { file_path: input.file_path || '' };
   if (toolName === 'Edit' || toolName === 'Write') return { file_path: input.file_path || '' };
+  // AskUserQuestion is answered *through* the permission prompt, so the client
+  // needs the full question/option structure — truncating it would leave the
+  // user with nothing but Allow/Deny.
+  if (toolName === 'AskUserQuestion') return input;
   const str = JSON.stringify(input);
   if (str.length > 500) return { _summary: str.slice(0, 500) + '…' };
   return input;
@@ -558,7 +565,11 @@ function handlePermissionResponse(sessionId, requestId, result) {
   session.pendingPermissions.delete(requestId);
 
   if (result.behavior === 'allow') {
-    resolve({ behavior: 'allow' });
+    const decision = { behavior: 'allow' };
+    // Carries the user's picks back into the tool call (e.g. AskUserQuestion
+    // answers). Omitted for plain Allow, where the input is unchanged.
+    if (result.updatedInput) decision.updatedInput = result.updatedInput;
+    resolve(decision);
   } else {
     resolve({ behavior: 'deny', message: result.message || 'User denied' });
   }

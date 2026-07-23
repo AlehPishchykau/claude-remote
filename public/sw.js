@@ -1,4 +1,4 @@
-const CACHE = 'cr-v6';
+const CACHE = 'cr-v7';
 const STATIC = ['/', '/style.css', '/app.js', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
