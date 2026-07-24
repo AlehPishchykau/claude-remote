@@ -829,10 +829,15 @@ button:active { opacity: 0.8; }
   cursor: default;
 }
 
-.chat-msg.thinking {
-  color: var(--fg-dim);
+/* Thinking bar */
+
+#thinking-bar {
+  padding: 6px 16px;
   font-size: 12px;
   font-style: italic;
+  color: var(--fg-dim);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
 }
 
 /* Image preview bar */

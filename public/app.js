@@ -90,6 +90,7 @@
     stopRecording();
     $('#terminal-container').classList.add('hidden');
     $('#chat-container').classList.add('hidden');
+    $('#thinking-bar').classList.add('hidden');
     $('#input-bar').classList.add('hidden');
     hideSessionTopbar();
     $('#no-session').classList.remove('hidden');
@@ -562,15 +563,19 @@
           }
         }
       } else if (msg.type === 'chat-text') {
+        $('#thinking-bar').classList.add('hidden');
         appendChatMessage('assistant', msg.text, msg.done);
       } else if (msg.type === 'chat-tool') {
+        $('#thinking-bar').classList.add('hidden');
         appendToolMessage({ tool: msg.tool, input: JSON.stringify(msg.input || {}).slice(0, 300) });
       } else if (msg.type === 'chat-thinking') {
-        appendChatMessage('thinking', 'Thinking...');
+        $('#thinking-bar').classList.remove('hidden');
       } else if (msg.type === 'chat-done') {
+        $('#thinking-bar').classList.add('hidden');
         chatBusy = false;
         updateChatInput();
       } else if (msg.type === 'chat-error') {
+        $('#thinking-bar').classList.add('hidden');
         appendChatMessage('tool', 'Error: ' + msg.error);
         chatBusy = false;
         updateChatInput();
@@ -714,16 +719,7 @@
         }
         container.appendChild(div);
       }
-    } else if (role === 'thinking') {
-      const prev = container.querySelector('.chat-msg.thinking');
-      if (prev) prev.remove();
-      const div = document.createElement('div');
-      div.className = 'chat-msg thinking';
-      div.textContent = text;
-      container.appendChild(div);
     } else {
-      const thinking = container.querySelector('.chat-msg.thinking');
-      if (thinking) thinking.remove();
       const div = document.createElement('div');
       div.className = 'chat-msg ' + role;
       div.textContent = text;
